@@ -24,75 +24,114 @@ interface AuthContextType {
   refreshProfile: () => Promise<void>;
 }
 
-// auth-context 내부에서 사용하는 회원가입 데이터 타입
-// (UI에서 받아서 SignupRequest로 변환)
 export interface SignupData {
-  email: string;       // → userEmail
+  email: string;
   password: string;
   name: string;
-  plateNumber: string; // → plateNumber (vehicleNumber 아님)
+  plateNumber: string;
   vehicleType: VehicleType;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
+
+function extractTokenData(raw: unknown): TokenData | null {
+  if (!raw || typeof raw !== "object") return null;
+
+  const source =
+    "data" in (raw as Record<string, unknown>)
+      ? (raw as { data?: unknown }).data
+      : raw;
+
+  if (!source || typeof source !== "object") return null;
+
+  const candidate = source as Partial<TokenData>;
+
+  if (
+    typeof candidate.accessToken !== "string" ||
+    typeof candidate.refreshToken !== "string" ||
+    typeof candidate.tokenType !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    accessToken: candidate.accessToken,
+    refreshToken: candidate.refreshToken,
+    tokenType: candidate.tokenType,
+  };
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<TokenData | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const stored = localStorage.getItem("auth");
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as TokenData;
-        setUser(parsed);
-        loadProfile(parsed.accessToken);
-      } catch {
-        localStorage.removeItem("auth");
-      }
-    }
-    setIsLoading(false);
-  }, []);
-
   const loadProfile = async (token: string) => {
+    console.log("[auth] loadProfile start", token);
     try {
-      // GET /api/users/me → UserProfileResDto
       const response = await authApi.getProfile(token);
+      console.log("[auth] loadProfile success", response);
       setProfile(response.data);
     } catch {
-      // 토큰 만료 등 — apiRequest에서 자동 갱신 시도 후 실패 시 /login 리다이렉트
+      console.log("[auth] loadProfile error");
+      setProfile(null);
     }
   };
 
+  useEffect(() => {
+    console.log("[auth] initialize start");
+    const stored = localStorage.getItem("auth");
+    console.log("[auth] stored auth", stored);
+
+    if (!stored) {
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(stored) as unknown;
+      const tokens = extractTokenData(parsed);
+      console.log("[auth] parsed token", parsed);
+
+      if (!tokens) {
+        throw new Error("Invalid auth payload");
+      }
+
+      setUser(tokens);
+      localStorage.setItem("auth", JSON.stringify(tokens));
+      setIsLoading(false);
+      void loadProfile(tokens.accessToken);
+    } catch {
+      localStorage.removeItem("auth");
+      setUser(null);
+      setProfile(null);
+      setIsLoading(false);
+    }
+  }, []);
+
   const login = async (email: string, password: string) => {
-    // POST /api/users/login
-    // LoginReqDto: { userEmail, password }
-    // LoginResDto: { accessToken, refreshToken, tokenType }
+    console.log("[auth] login start", { email });
     const response = await authApi.login({
-      userEmail: email,   // ← 필드명 변환
+      userEmail: email,
       password,
     });
-    const tokens = response.data; // { accessToken, refreshToken, tokenType }
+    const tokens = response.data;
+    console.log("[auth] login success", tokens);
+
     setUser(tokens);
     localStorage.setItem("auth", JSON.stringify(tokens));
-    // 토큰만 받으므로 프로필은 별도로 조회
     await loadProfile(tokens.accessToken);
   };
 
   const signup = async (data: SignupData) => {
-    // POST /api/users/signup
-    // SignupReqDto: { userEmail, password, name, plateNumber, vehicleType }
-    const response = await authApi.signup({
-      userEmail: data.email,        // ← 필드명 변환
+    await authApi.signup({
+      userEmail: data.email,
       password: data.password,
       name: data.name,
-      plateNumber: data.plateNumber, // ← 필드명 변환
+      plateNumber: data.plateNumber,
       vehicleType: data.vehicleType,
     });
-    // 회원가입 응답은 UserProfileResDto (토큰 없음)
-    // → 바로 로그인 처리
-    setProfile(response.data);
+
     await login(data.email, data.password);
   };
 
@@ -101,18 +140,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         await authApi.logout(user.accessToken);
       } catch {
-        // 서버 로그아웃 실패해도 클라이언트는 정리
+        // 서버 로그아웃 실패와 무관하게 클라이언트 상태는 정리
       }
     }
+
     setUser(null);
     setProfile(null);
     localStorage.removeItem("auth");
   };
 
   const refreshProfile = async () => {
-    if (user?.accessToken) {
-      await loadProfile(user.accessToken);
-    }
+    if (!user?.accessToken) return;
+    await loadProfile(user.accessToken);
   };
 
   return (
@@ -134,8 +173,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
+
   if (!context) {
     throw new Error("useAuth must be used within an AuthProvider");
   }
+
   return context;
 }
