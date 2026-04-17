@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────
 // 백엔드 API Base
 // ─────────────────────────────────────────────
-export const API_BASE = 'http://localhost:8080/api';
+export const API_BASE = '/api';
 
 
 

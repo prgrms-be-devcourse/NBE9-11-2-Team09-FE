@@ -127,9 +127,11 @@ export default function ParkingLotDetailPage() {
               </div>
               <p className="text-sm text-muted-foreground mb-4">※ 본인의 차량 종류와 일치하는 구역만 예약 가능합니다.</p>
               <ParkingSpotSelector 
-                spots={spots.filter(s => !profile || s.type === profile.vehicleType)} // 같은 차종인 자리만 노출
+                spots={spots.filter(s => !profile || s.type === profile.vehicleType)}
                 selectedSpot={selectedSpot} 
-                onSelect={setSelectedSpot} 
+                onSelect={setSelectedSpot}
+                accessToken={user?.accessToken ?? ""}
+                parkingLotId={parkingLotId}
               />
             </>
           ) : (
