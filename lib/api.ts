@@ -285,25 +285,28 @@ export const authApi = {
 // ─────────────────────────────────────────────
 export const parkingLotApi = {
   // GET /api/parking-lots?dong={dong}
-  getList: (dong?: string) =>
+  getList: (token: string, dong?: string) =>
     apiRequest<ApiResponse<ParkingLot[]>>(
-      `/parking-lots${dong ? `?dong=${encodeURIComponent(dong)}` : ""}`
+      `/parking-lots${dong ? `?dong=${encodeURIComponent(dong)}` : ""}`,
+      { token }
     ),
 
   // GET /api/parking-lots/{id}
-  getDetail: (id: number) =>
-    apiRequest<ApiResponse<ParkingLot>>(`/parking-lots/${id}`),
+  getDetail: (token: string, id: number) =>
+    apiRequest<ApiResponse<ParkingLot>>(`/parking-lots/${id}`, { token }),
 
   // GET /api/parking-spots/{lotId}/spots/available
-  getAvailableSpots: (parkingLotId: number) =>
+  getAvailableSpots: (token: string, parkingLotId: number) =>
     apiRequest<ApiResponse<ParkingSpot[]>>(
-      `/parking-spots/${parkingLotId}/spots/available`
+      `/parking-spots/${parkingLotId}/spots/available`,
+      { token }
     ),
 
   // GET /api/parking-spots/{lotId}/spots
-  getAllSpots: (parkingLotId: number) =>
+  getAllSpots: (token: string, parkingLotId: number) =>
     apiRequest<ApiResponse<ParkingSpot[]>>(
-      `/parking-spots/${parkingLotId}/spots`
+      `/parking-spots/${parkingLotId}/spots`,
+      { token }
     ),
 };
 

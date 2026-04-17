@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "@/lib/auth-context"; // 추가
 import { useParams, useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { ParkingSpotSelector } from "@/components/parking/parking-spot-selector";
@@ -28,6 +29,7 @@ export default function ParkingLotDetailPage() {
   const params = useParams();
   const router = useRouter();
   const parkingLotId = Number(params.id);
+  const { user, isLoading: authLoading } = useAuth(); // 인증 정보 가져오기
 
   const [parkingLot, setParkingLot] = useState<ParkingLot | null>(null);
   const [spots, setSpots] = useState<ParkingSpot[]>([]);
@@ -38,32 +40,43 @@ export default function ParkingLotDetailPage() {
   const [step, setStep] = useState<1 | 2>(1);
 
   const fetchParkingLot = useCallback(async () => {
+    if (!user?.accessToken) return;
     setLoading(true);
     try {
-      const res = await parkingLotApi.getDetail(parkingLotId);
+      // 토큰 포함 호출
+      const res = await parkingLotApi.getDetail(user.accessToken, parkingLotId);
       setParkingLot(res.data);
     } catch {
-      setParkingLot({ ...MOCK_LOT, id: parkingLotId });
+      setParkingLot(null);
     } finally {
       setLoading(false);
     }
-  }, [parkingLotId]);
+  }, [parkingLotId, user]);
 
   const fetchSpots = useCallback(async () => {
+    if (!user?.accessToken) return;
     try {
-      // GET /api/parking-spots/{lotId}/spots/available
-      const res = await parkingLotApi.getAvailableSpots(parkingLotId);
+      // 토큰 포함 호출
+      const res = await parkingLotApi.getAvailableSpots(user.accessToken, parkingLotId);
       setSpots(res.data);
     } catch {
-      setSpots(MOCK_SPOTS);
+      setSpots([]);
     }
-  }, [parkingLotId]);
+  }, [parkingLotId, user]);
 
   useEffect(() => { fetchParkingLot(); }, [fetchParkingLot]);
 
+  useEffect(() => { 
+    if (!authLoading && user?.accessToken) {
+      fetchParkingLot(); 
+    }
+  }, [fetchParkingLot, authLoading, user]);
+
   useEffect(() => {
-    if (step === 2) fetchSpots();
-  }, [step, fetchSpots]);
+    if (!authLoading && user?.accessToken && step === 2) {
+      fetchSpots();
+    }
+  }, [step, fetchSpots, authLoading, user]);
 
   // 예상 요금 계산 (10분당 price원)
   const calculateTotalPrice = () => {

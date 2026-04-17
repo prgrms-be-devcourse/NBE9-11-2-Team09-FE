@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuth } from "@/lib/auth-context"; // 추가
 import { Header } from "@/components/layout/header";
 import { ParkingLotCard } from "@/components/parking/parking-lot-card";
 import { SearchFilters, type FilterOptions } from "@/components/parking/search-filters";
@@ -8,17 +9,8 @@ import { parkingLotApi, type ParkingLot } from "@/lib/api";
 import { Car, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-// 목데이터 - 백엔드 ParkingLotResDto 필드명과 일치
-const MOCK_PARKING_LOTS: ParkingLot[] = [
-  { id: 1, name: "강남역 공영주차장",    address: "서울 강남구 강남대로 396",   totalSpot: 150, price: 1000, operationStartTime: "00:00:00", operationEndTime: "23:59:00" },
-  { id: 2, name: "역삼1동 공영주차장",   address: "서울 강남구 역삼동 123-45",  totalSpot: 80,  price: 800,  operationStartTime: "09:00:00", operationEndTime: "18:00:00" },
-  { id: 3, name: "삼성동 공영주차장",    address: "서울 강남구 삼성동 159",     totalSpot: 500, price: 1200, operationStartTime: "00:00:00", operationEndTime: "23:59:00" },
-  { id: 4, name: "대치동 공영주차장",    address: "서울 강남구 대치동 890-1",   totalSpot: 200, price: 800,  operationStartTime: "07:00:00", operationEndTime: "22:00:00" },
-  { id: 5, name: "논현동 공영주차장",    address: "서울 강남구 논현동 215-4",   totalSpot: 300, price: 1000, operationStartTime: "00:00:00", operationEndTime: "23:59:00" },
-  { id: 6, name: "압구정동 공영주차장",  address: "서울 강남구 압구정동 301",   totalSpot: 120, price: 900,  operationStartTime: "00:00:00", operationEndTime: "23:59:00" },
-];
-
 export default function ParkingLotsPage() {
+  const { user, isLoading: authLoading } = useAuth(); // 인증 정보 가져오기
   const [parkingLots, setParkingLots] = useState<ParkingLot[]>([]);
   const [filteredLots, setFilteredLots] = useState<ParkingLot[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,26 +18,29 @@ export default function ParkingLotsPage() {
   const [filters, setFilters] = useState<FilterOptions>({ sortBy: "name", hasAvailable: false });
 
   const fetchParkingLots = async (dong?: string) => {
+    if (!user?.accessToken) return; // 토큰이 없으면 실행하지 않음
+    
     setLoading(true);
     setError(null);
     try {
-      // GET /api/parking-lots?dong={dong}
-      const response = await parkingLotApi.getList(dong);
+      // 토큰 포함 호출
+      const response = await parkingLotApi.getList(user.accessToken, dong);
       setParkingLots(response.data);
       setFilteredLots(response.data);
-    } catch {
-      // API 실패 시 목데이터 사용
-      const filtered = dong
-        ? MOCK_PARKING_LOTS.filter(l => l.name.includes(dong) || l.address.includes(dong))
-        : MOCK_PARKING_LOTS;
-      setParkingLots(filtered);
-      setFilteredLots(filtered);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "주차장 목록을 불러오지 못했습니다.");
+      setParkingLots([]);
+      setFilteredLots([]);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchParkingLots(); }, []);
+  useEffect(() => { 
+    if (!authLoading && user?.accessToken) {
+      fetchParkingLots(); 
+    }
+  }, [authLoading, user]);
 
   const handleSearch = (query: string) => {
     if (!query) { setFilteredLots(parkingLots); return; }
@@ -104,7 +99,6 @@ export default function ParkingLotsPage() {
           <div className="flex flex-col items-center justify-center py-20">
             <Car className="w-12 h-12 text-muted-foreground mb-4" />
             <p className="text-foreground font-medium mb-2">검색 결과가 없습니다</p>
-            <p className="text-muted-foreground text-sm">다른 검색어나 필터를 시도해보세요</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
