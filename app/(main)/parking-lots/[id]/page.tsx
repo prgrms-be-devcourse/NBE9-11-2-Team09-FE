@@ -132,7 +132,15 @@ export default function ParkingLotDetailPage() {
           {step === 1 ? (
             <>
               <h2 className="text-lg font-semibold text-foreground mb-4">주차 자리를 선택하세요</h2>
-              <ParkingSpotSelector spots={spots} selectedSpot={selectedSpot} onSelect={setSelectedSpot} />
+              {user && (
+                  <ParkingSpotSelector
+                    spots={spots}
+                    selectedSpot={selectedSpot}
+                    onSelect={setSelectedSpot}
+                    accessToken={user.accessToken}
+                    parkingLotId={parkingLotId}
+                  />
+                )}
             </>
           ) : (
             <>
