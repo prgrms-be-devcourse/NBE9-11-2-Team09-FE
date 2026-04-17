@@ -73,13 +73,17 @@ export default function ParkingLotDetailPage() {
 
   const handleProceedToReservation = () => {
     if (!selectedSpot || !startTime || !endTime || !parkingLot) return;
+    const formatToLocalISO = (date: Date) => {
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  };
     const data = {
       parkingLotId,
       parkingLotName: parkingLot.name,
       spotId: selectedSpot.id,
       spotNumber: selectedSpot.number,
-      startTime: toBackendDateTime(startTime.toISOString().slice(0, 16)),
-      endTime: toBackendDateTime(endTime.toISOString().slice(0, 16)),
+      startTime: toBackendDateTime(formatToLocalISO(startTime)),
+      endTime: toBackendDateTime(formatToLocalISO(endTime)),
       totalPrice: calculateTotalPrice(),
     };
     sessionStorage.setItem("pendingReservation", JSON.stringify(data));
