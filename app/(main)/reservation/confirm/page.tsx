@@ -82,9 +82,15 @@ export default function ReservationConfirmPage() {
 
       // paymentId 사용
       const paymentId = payRes.data.paymentId;
+      const orderId = payRes.data.receiptUuid;
 
       // 3. POST /api/payments/{paymentId}/approve
-      await paymentApi.approve(user.accessToken, paymentId);
+      // data 인자 추가
+      await paymentApi.approve(user.accessToken, paymentId, {
+        paymentKey: orderId,  // 토스 연동 전 임시로 orderId 값 사용
+        orderId: orderId,
+        amount: reservation.totalPrice,
+      });
 
       sessionStorage.removeItem("pendingReservation");
       setStep("success");

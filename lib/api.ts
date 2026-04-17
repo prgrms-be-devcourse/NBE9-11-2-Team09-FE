@@ -228,6 +228,12 @@ export interface CreatePaymentRequest {
   amount: number;
 }
 
+export interface TossConfirmRequest {
+  paymentKey: string;  // 토스에서 발급한 결제 키
+  orderId: string;     // receiptUuid (start API 응답값)
+  amount: number;      // 결제 금액
+}
+
 // ─────────────────────────────────────────────
 // Auth API
 // ─────────────────────────────────────────────
@@ -359,9 +365,10 @@ export const paymentApi = {
     }),
 
   // POST /api/payments/{paymentId}/approve
-  approve: (token: string, paymentId: number) =>
+  approve: (token: string, paymentId: number, data: TossConfirmRequest) =>
     apiRequest<ApiResponse<Payment>>(`/payments/${paymentId}/approve`, {
       method: "POST",
       token,
+      body: data,
     }),
 };
