@@ -41,7 +41,7 @@ export default function ParkingLotDetailPage() {
   const fetchSpots = useCallback(async () => {
     if (!user?.accessToken) return;
     try {
-      const res = await parkingLotApi.getAvailableSpots(user.accessToken, parkingLotId);
+      const res = await parkingLotApi.getAllSpots(user.accessToken, parkingLotId);
       setSpots(res.data);
     } catch {
       setSpots([]);
