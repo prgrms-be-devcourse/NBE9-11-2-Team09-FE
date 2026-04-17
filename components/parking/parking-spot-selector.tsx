@@ -23,12 +23,50 @@ export function ParkingSpotSelector({
   const [localSpots, setLocalSpots] = useState<ParkingSpot[]>([]);
   const [selectedSpotModal, setSelectedSpotModal] = useState<ParkingSpot | null>(null);
 
+  // 1. 부모로부터 받아온 초기 데이터 세팅
   useEffect(() => {
     if (spots && spots.length > 0) {
       setLocalSpots(spots);
     }
   }, [spots]);
 
+  // 🟢 2. SSE(Server-Sent Events) 실시간 알림 구독
+  useEffect(() => {
+    if (!parkingLotId || !accessToken) return;
+
+    // 🔥 요청하신 "Query String" 방식으로 토큰 전달
+    const sseUrl = `http://localhost:8080/api/parking-spots/${parkingLotId}/subscribe?token=${accessToken}`;
+    
+    const eventSource = new EventSource(sseUrl);
+
+    // 백엔드에서 데이터가 날아올 때마다 실행
+    eventSource.onmessage = (event) => {
+      try {
+        const updatedSpot: ParkingSpot = JSON.parse(event.data);
+        
+        // 화면의 주차 자리 상태를 실시간으로 즉시 업데이트
+        setLocalSpots((prevSpots) =>
+          prevSpots.map((spot) =>
+            spot.id === updatedSpot.id ? { ...spot, status: updatedSpot.status } : spot
+          )
+        );
+        console.log(`[SSE 실시간 알림] ${updatedSpot.number}번 자리 상태 변경: ${updatedSpot.status}`);
+      } catch (error) {
+        console.error("SSE 데이터 파싱 에러:", error);
+      }
+    };
+
+    eventSource.onerror = (error) => {
+      console.error("SSE 연결 에러 (재연결 시도 중...)", error);
+    };
+
+    // 컴포넌트가 화면에서 사라지면 연결 해제 (메모리 누수 방지)
+    return () => {
+      eventSource.close();
+    };
+  }, [parkingLotId, accessToken]);
+
+  // 3. 선점 예약 통신 로직
   const handleReserve = async () => {
     if (!selectedSpotModal) return;
 
@@ -54,6 +92,7 @@ export function ParkingSpotSelector({
         endTime: formatToKST(end),
       });
 
+      // 내 화면은 통신 성공 즉시 낙관적 업데이트 적용 (SSE보다 더 빠르게 반응)
       setLocalSpots((prev) =>
         prev.map((s) => (s.id === selectedSpotModal.id ? { ...s, status: "OCCUPIED" } : s))
       );
@@ -68,24 +107,13 @@ export function ParkingSpotSelector({
   };
 
   const getSpotStyles = (spot: ParkingSpot) => {
-    // 1. 결제 중 상태 (노란색)
-    if (spot.status === "PAYING") {
-      return "bg-amber-50 text-amber-700 border-amber-200 cursor-not-allowed opacity-80";
-    }
+    if (spot.status === "PAYING") return "bg-amber-50 text-amber-700 border-amber-200 cursor-not-allowed opacity-80";
+    if (spot.status === "OCCUPIED" || spot.status === "PARKED") return "bg-muted text-muted-foreground cursor-not-allowed opacity-50";
 
-    // 2. 선점/주차 중 상태 (회색)
-    if (spot.status === "OCCUPIED" || spot.status === "PARKED") {
-      return "bg-muted text-muted-foreground cursor-not-allowed opacity-50";
-    }
-
-    // 3. 주차 가능 상태 (차종별 색상 구분)
     switch (spot.type) {
-      case "ELECTRIC":
-        return "bg-green-50 text-green-700 hover:bg-green-100 border-green-200";
-      case "LARGE":
-        return "bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200";
-      default: // SMALL
-        return "bg-card hover:bg-muted border-border";
+      case "ELECTRIC": return "bg-green-50 text-green-700 hover:bg-green-100 border-green-200";
+      case "LARGE":    return "bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200";
+      default:         return "bg-card hover:bg-muted border-border";
     }
   };
 
