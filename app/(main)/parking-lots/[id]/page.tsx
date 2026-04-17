@@ -138,8 +138,24 @@ export default function ParkingLotDetailPage() {
             </>
           )}
         </div>
-        
-        {/* ... 하단 버튼 영역 생략 */}
+
+        <div className="sticky bottom-0 bg-background border-t border-border p-4 -mx-4">
+          <div className="max-w-3xl mx-auto flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">예상 결제 금액</p>
+              <p className="text-2xl font-bold text-foreground">{calculateTotalPrice().toLocaleString()}원</p>
+            </div>
+            {step === 1 ? (
+              <Button size="lg" onClick={() => setStep(2)} disabled={!selectedSpot} className="px-8">
+                시간 선택하기
+              </Button>
+            ) : (
+              <Button size="lg" onClick={handleProceedToReservation} disabled={!startTime || !endTime} className="px-8">
+                예약하기
+              </Button>
+            )}
+          </div>
+        </div>
       </main>
     </div>
   );
