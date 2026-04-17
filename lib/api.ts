@@ -79,6 +79,7 @@ export interface ApiResponse<T> {
   data: T;
 }
 
+
 // ─────────────────────────────────────────────
 // VehicleType (백엔드 enum: SMALL | LARGE | ELECTRIC)
 // ─────────────────────────────────────────────
@@ -237,6 +238,10 @@ export const authApi = {
       method: "POST",
       body: data,
     }),
+
+  // GET /api/users/check-email?email=... → RsData<Boolean>
+  checkEmail: (email: string) =>
+  apiRequest<{ available: boolean; message: string }>(`/users/check-email?email=${encodeURIComponent(email)}`),
 
   // POST /api/users/login → RsData<LoginResDto>
   login: (data: LoginRequest) =>
