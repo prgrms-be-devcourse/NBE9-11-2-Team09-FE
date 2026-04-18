@@ -47,11 +47,14 @@ export interface ParkingSpot {
 
 export interface Reservation {
   reservationId: number;
+  parkingLotId: number;       // 추가
+  parkingSpotId: number;      // 추가
   parkingLotName: string;
   parkingSpotNumber: string;
   startTime: string;
   endTime: string;
   status: ReservationStatus;
+  totalPrice: number;         // 추가
 }
 
 export interface Payment {
@@ -368,6 +371,7 @@ export const parkingLotApi = {
 export const reservationApi = {
   create: (token: string, data: any) => apiRequest<ApiResponse<Reservation>>("/reservations", { method: "POST", token, body: data }),
   getList: (token: string) => apiRequest<ApiResponse<Reservation[]>>("/reservations", { token }),
+  getDetail: (token: string, id: number) => apiRequest<ApiResponse<Reservation>>(`/reservations/${id}`, { token }), // 없으면 추가
   cancel: (token: string, id: number) => apiRequest<ApiResponse<null>>(`/reservations/${id}/cancel`, { method: "PATCH", token }),
 };
 

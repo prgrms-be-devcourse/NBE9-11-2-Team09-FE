@@ -5,36 +5,16 @@ import { Header } from "@/components/layout/header";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
 import { reservationApi, type Reservation, RESERVATION_STATUS_LABELS } from "@/lib/api";
-import { Calendar, Clock, MapPin, Loader2, ChevronRight } from "lucide-react";
+import { Calendar, Clock, MapPin, Loader2, ChevronRight, CreditCard } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-
-// 목데이터 - ReservationResDto 필드 기준
-const MOCK_RESERVATIONS: Reservation[] = [
-  {
-    reservationId: 1, parkingLotName: "강남역 공영주차장", parkingSpotNumber: "A05",
-    startTime: new Date(Date.now() + 2 * 3600000).toISOString(),
-    endTime:   new Date(Date.now() + 4 * 3600000).toISOString(),
-    status: "CONFIRMED",
-  },
-  {
-    reservationId: 2, parkingLotName: "역삼1동 공영주차장", parkingSpotNumber: "B12",
-    startTime: new Date(Date.now() - 24 * 3600000).toISOString(),
-    endTime:   new Date(Date.now() - 22 * 3600000).toISOString(),
-    status: "COMPLETED",
-  },
-  {
-    reservationId: 3, parkingLotName: "삼성동 공영주차장", parkingSpotNumber: "C08",
-    startTime: new Date(Date.now() - 48 * 3600000).toISOString(),
-    endTime:   new Date(Date.now() - 46 * 3600000).toISOString(),
-    status: "CANCELED",
-  },
-];
 
 type TabType = "upcoming" | "past";
 
 export default function ReservationsPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>("upcoming");
@@ -43,11 +23,10 @@ export default function ReservationsPage() {
     const fetch = async () => {
       if (!user?.accessToken) return;
       try {
-        // GET /api/reservations
         const res = await reservationApi.getList(user.accessToken);
         setReservations(res.data);
       } catch {
-        setReservations(MOCK_RESERVATIONS);
+        setReservations([]);
       } finally {
         setLoading(false);
       }
@@ -77,7 +56,28 @@ export default function ReservationsPage() {
   const isUpcoming = (r: Reservation) =>
     new Date(r.endTime) > new Date() && r.status !== "CANCELED" && r.status !== "COMPLETED";
 
-  const filtered = reservations.filter(r => activeTab === "upcoming" ? isUpcoming(r) : !isUpcoming(r));
+  // PENDING 예약 → confirm 페이지로 이동
+  const handleGoToPayment = (r: Reservation, e: React.MouseEvent) => {
+    e.preventDefault(); // Link 클릭 이벤트 막기
+    sessionStorage.setItem(
+      "pendingReservation",
+      JSON.stringify({
+        reservationId: r.reservationId,
+        parkingLotId: r.parkingLotId,
+        parkingLotName: r.parkingLotName,
+        spotId: r.parkingSpotId,
+        spotNumber: r.parkingSpotNumber,
+        startTime: r.startTime,
+        endTime: r.endTime,
+        totalPrice: r.totalPrice,
+      })
+    );
+    router.push("/reservation/confirm");
+  };
+
+  const filtered = reservations.filter(r =>
+    activeTab === "upcoming" ? isUpcoming(r) : !isUpcoming(r)
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -117,13 +117,11 @@ export default function ReservationsPage() {
               const s = formatDateTime(r.startTime);
               const e = formatDateTime(r.endTime);
               return (
-                /* reservationId 사용 */
                 <Link key={r.reservationId} href={`/reservations/${r.reservationId}`}>
                   <div className="bg-card border border-border rounded-xl p-4 hover:shadow-md hover:border-foreground/20 transition-all">
                     <div className="flex items-start justify-between mb-3">
                       <div>
                         <h3 className="font-semibold text-foreground">{r.parkingLotName}</h3>
-                        {/* parkingSpotNumber 필드 */}
                         <p className="text-sm text-muted-foreground">{r.parkingSpotNumber}번 자리</p>
                       </div>
                       <span className={cn("px-2.5 py-1 rounded-full text-xs font-medium", getStatusStyle(r.status))}>
@@ -134,9 +132,23 @@ export default function ReservationsPage() {
                       <div className="flex items-center gap-1.5"><Calendar className="w-4 h-4" /><span>{s.date}</span></div>
                       <div className="flex items-center gap-1.5"><Clock className="w-4 h-4" /><span>{s.time} ~ {e.time}</span></div>
                     </div>
-                    <div className="flex justify-end pt-3 border-t border-border">
-                      <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                    </div>
+
+                    {/* PENDING 상태일 때만 결제하기 버튼 표시 */}
+                    {r.status === "PENDING" ? (
+                      <div className="pt-3 border-t border-border">
+                        <button
+                          onClick={(e) => handleGoToPayment(r, e)}
+                          className="w-full h-10 rounded-lg bg-[#2563eb] text-white text-sm font-semibold hover:bg-[#1d4ed8] transition-colors flex items-center justify-center gap-2"
+                        >
+                          <CreditCard className="w-4 h-4" />
+                          결제하기
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex justify-end pt-3 border-t border-border">
+                        <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                      </div>
+                    )}
                   </div>
                 </Link>
               );
