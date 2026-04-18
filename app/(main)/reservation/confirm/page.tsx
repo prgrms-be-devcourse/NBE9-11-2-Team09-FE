@@ -5,14 +5,15 @@ import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
-import { reservationApi, paymentApi } from "@/lib/api";
+import { paymentApi } from "@/lib/api";
 import {
-  ArrowLeft, MapPin, Calendar, Clock, Car,
+  ArrowLeft, MapPin, Calendar, Clock,
   CreditCard, Check, Loader2, AlertCircle, Shield,
 } from "lucide-react";
 import Link from "next/link";
 
 interface PendingReservation {
+  reservationId: number;
   parkingLotId: number;
   parkingLotName: string;
   spotId: number;
@@ -27,7 +28,6 @@ export default function ReservationConfirmPage() {
   const { user, profile } = useAuth();
   const [reservation, setReservation] = useState<PendingReservation | null>(null);
   const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState<"confirm" | "success">("confirm");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -55,36 +55,25 @@ export default function ReservationConfirmPage() {
     return diff < 60 ? `${diff}분` : `${diff/60}시간`;
   };
 
+  // 예약은 이미 생성됨 → 결제만 시작
   const handleConfirm = async () => {
     if (!reservation || !user?.accessToken) return;
     setLoading(true);
     setError(null);
 
     try {
-      // 1. 예약 생성
-      const resRes = await reservationApi.create(user.accessToken, {
-        parkingLotId: reservation.parkingLotId,
-        parkingSpotId: reservation.spotId,
-        startTime: reservation.startTime,
-        endTime: reservation.endTime,
-      });
-      const reservationId = resRes.data.reservationId;
-
-      // 2. 결제 시작
       const payRes = await paymentApi.start(user.accessToken, {
-        reservationId,
+        reservationId: reservation.reservationId,
         amount: reservation.totalPrice,
       });
-      const paymentId = payRes.data.paymentId;
-      const orderId = payRes.data.receiptUuid;
 
-      // 3. 토스 결제 페이지로 이동
+      const paymentId = payRes.data.paymentId;
+
       router.push(
         `/payment?parkingLotId=${reservation.parkingLotId}&price=${reservation.totalPrice}&paymentId=${paymentId}`
       );
-
     } catch (err) {
-      setError(err instanceof Error ? err.message : "예약에 실패했습니다.");
+      setError(err instanceof Error ? err.message : "결제 시작에 실패했습니다.");
     } finally {
       setLoading(false);
     }
@@ -101,51 +90,6 @@ export default function ReservationConfirmPage() {
   const s = formatDateTime(reservation.startTime);
   const e = formatDateTime(reservation.endTime);
 
-  if (step === "success") return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      <main className="max-w-lg mx-auto px-4 py-12">
-        <div className="text-center mb-8">
-          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Check className="w-10 h-10 text-green-600" />
-          </div>
-          <h1 className="text-2xl font-bold text-foreground mb-2">예약이 완료되었습니다!</h1>
-          <p className="text-muted-foreground">내 예약 페이지에서 확인할 수 있습니다</p>
-        </div>
-
-        <div className="bg-card border border-border rounded-xl p-6 mb-6 space-y-3">
-          <h2 className="font-semibold text-foreground">예약 정보</h2>
-          <div className="flex items-start gap-3">
-            <MapPin className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium text-foreground">{reservation.parkingLotName}</p>
-              <p className="text-sm text-muted-foreground">{reservation.spotNumber}번 자리</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-3">
-            <Calendar className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium text-foreground">{s.date}</p>
-              <p className="text-sm text-muted-foreground">{s.time} ~ {e.time} ({getDuration()})</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-3">
-            <CreditCard className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium text-foreground">{reservation.totalPrice.toLocaleString()}원</p>
-              <p className="text-sm text-muted-foreground">결제 완료</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex gap-3">
-          <Link href="/reservations" className="flex-1"><Button variant="outline" className="w-full">예약 확인하기</Button></Link>
-          <Link href="/parking-lots" className="flex-1"><Button className="w-full">홈으로</Button></Link>
-        </div>
-      </main>
-    </div>
-  );
-
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -158,13 +102,17 @@ export default function ReservationConfirmPage() {
         <div className="bg-card border border-border rounded-xl p-6 mb-6 space-y-4">
           <h2 className="font-semibold text-foreground">예약 정보</h2>
           {[
-            { icon: MapPin,    label: "주차장",   value: reservation.parkingLotName, sub: `${reservation.spotNumber}번 자리` },
-            { icon: Calendar,  label: "이용 날짜", value: s.date },
-            { icon: Clock,     label: "이용 시간", value: `${s.time} ~ ${e.time} (${getDuration()})` },
+            { icon: MapPin,   label: "주차장",   value: reservation.parkingLotName, sub: `${reservation.spotNumber}번 자리` },
+            { icon: Calendar, label: "이용 날짜", value: s.date },
+            { icon: Clock,    label: "이용 시간", value: `${s.time} ~ ${e.time} (${getDuration()})` },
           ].map(({ icon: Icon, label, value, sub }) => (
             <div key={label} className="flex items-start gap-3 pb-4 border-b border-border last:border-0 last:pb-0">
               <Icon className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-              <div><p className="text-sm text-muted-foreground">{label}</p><p className="font-medium text-foreground">{value}</p>{sub && <p className="text-sm text-muted-foreground">{sub}</p>}</div>
+              <div>
+                <p className="text-sm text-muted-foreground">{label}</p>
+                <p className="font-medium text-foreground">{value}</p>
+                {sub && <p className="text-sm text-muted-foreground">{sub}</p>}
+              </div>
             </div>
           ))}
         </div>
@@ -191,7 +139,7 @@ export default function ReservationConfirmPage() {
         <div className="bg-muted/50 rounded-lg p-4 mb-6">
           <div className="flex items-start gap-3">
             <Shield className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-muted-foreground">결제 진행 시 이용약관에 동의하는 것으로 간주됩니다. 이용 시작 1시간 전까지 취소 가능합니다.</p>
+            <p className="text-xs text-muted-foreground">결제 진행 시 이용약관에 동의하는 것으로 간주됩니다. 이용 시작 30분 전까지 취소 가능합니다.</p>
           </div>
         </div>
 

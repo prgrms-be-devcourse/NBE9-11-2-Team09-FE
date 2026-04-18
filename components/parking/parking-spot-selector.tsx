@@ -1,27 +1,21 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { type ParkingSpot, SPOT_TYPE_LABELS, reservationApi } from "@/lib/api";
+import { type ParkingSpot, SPOT_TYPE_LABELS } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { Check } from "lucide-react";
 
 interface ParkingSpotSelectorProps {
   spots: ParkingSpot[];
   selectedSpot: ParkingSpot | null;
-  onSelect: (spot: ParkingSpot) => void;
-  accessToken: string;
-  parkingLotId: number;
+  onSelect: (spot: ParkingSpot | null) => void;
 }
 
 export function ParkingSpotSelector({
   spots,
   selectedSpot,
   onSelect,
-  accessToken,
-  parkingLotId,
 }: ParkingSpotSelectorProps) {
   const [localSpots, setLocalSpots] = useState<ParkingSpot[]>([]);
-  const [selectedSpotModal, setSelectedSpotModal] = useState<ParkingSpot | null>(null);
 
   useEffect(() => {
     if (spots && spots.length > 0) {
@@ -29,62 +23,31 @@ export function ParkingSpotSelector({
     }
   }, [spots]);
 
-  const handleReserve = async () => {
-    if (!selectedSpotModal) return;
-
-    try {
-      const now = new Date();
-      now.setMinutes(now.getMinutes() + 2); 
-      const end = new Date(now.getTime() + 60 * 60 * 1000);
-
-      const formatToKST = (date: Date) => {
-        const yyyy = date.getFullYear();
-        const mm = String(date.getMonth() + 1).padStart(2, "0");
-        const dd = String(date.getDate()).padStart(2, "0");
-        const hh = String(date.getHours()).padStart(2, "0");
-        const mi = String(date.getMinutes()).padStart(2, "0");
-        const ss = String(date.getSeconds()).padStart(2, "0");
-        return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
-      };
-
-      await reservationApi.create(accessToken, {
-        parkingLotId,
-        parkingSpotId: selectedSpotModal.id,
-        startTime: formatToKST(now),
-        endTime: formatToKST(end),
-      });
-
-      setLocalSpots((prev) =>
-        prev.map((s) => (s.id === selectedSpotModal.id ? { ...s, status: "OCCUPIED" } : s))
-      );
-
-      onSelect({ ...selectedSpotModal, status: "OCCUPIED" });
-      setSelectedSpotModal(null);
-      
-    } catch (e: any) {
-      alert(e.message || "이미 다른 사용자가 선점했습니다.");
-      setSelectedSpotModal(null);
+  const handleSpotClick = (spot: ParkingSpot) => {
+    if (spot.status !== "AVAILABLE") return;
+    if (selectedSpot?.id === spot.id) {
+      onSelect(null); // 같은 자리 재클릭 시 선택 해제
+    } else {
+      onSelect(spot);
     }
   };
 
   const getSpotStyles = (spot: ParkingSpot) => {
-    // 1. 결제 중 상태 (노란색)
     if (spot.status === "PAYING") {
       return "bg-amber-50 text-amber-700 border-amber-200 cursor-not-allowed opacity-80";
     }
-
-    // 2. 선점/주차 중 상태 (회색)
     if (spot.status === "OCCUPIED" || spot.status === "PARKED") {
       return "bg-muted text-muted-foreground cursor-not-allowed opacity-50";
     }
-
-    // 3. 주차 가능 상태 (차종별 색상 구분)
+    if (selectedSpot?.id === spot.id) {
+      return "bg-[#2563eb] text-white border-[#2563eb] ring-2 ring-[#2563eb] ring-offset-1";
+    }
     switch (spot.type) {
       case "ELECTRIC":
         return "bg-green-50 text-green-700 hover:bg-green-100 border-green-200";
       case "LARGE":
         return "bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200";
-      default: // SMALL
+      default:
         return "bg-card hover:bg-muted border-border";
     }
   };
@@ -103,8 +66,7 @@ export function ParkingSpotSelector({
 
   return (
     <div className="space-y-6">
-      
-      {/* 📌 구역 및 상태 안내 (범례) */}
+      {/* 범례 */}
       <div className="flex flex-col gap-3 rounded-lg border bg-card p-4 shadow-sm">
         <p className="text-sm font-semibold text-foreground">구역 및 상태 안내</p>
         <div className="flex flex-wrap gap-4 text-sm">
@@ -128,10 +90,14 @@ export function ParkingSpotSelector({
             <div className="w-4 h-4 rounded bg-muted opacity-50" />
             <span className="text-muted-foreground font-medium">선점/주차중</span>
           </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded bg-[#2563eb]" />
+            <span className="text-muted-foreground font-medium">선택됨</span>
+          </div>
         </div>
       </div>
 
-      {/* 🚙 주차 그리드 */}
+      {/* 주차 그리드 */}
       <div className="bg-muted/30 rounded-xl p-4 overflow-x-auto border">
         <div className="min-w-[400px]">
           <div className="text-center mb-4">
@@ -139,35 +105,29 @@ export function ParkingSpotSelector({
               ↓ 입구 방향
             </span>
           </div>
-
           <div className="space-y-3">
             {Array.from({ length: rows }).map((_, rowIdx) => (
               <div key={rowIdx} className="flex justify-center gap-2">
-                {localSpots
-                  .slice(rowIdx * 5, (rowIdx + 1) * 5)
-                  .map((spot) => (
-                    <button
-                      key={spot.id}
-                      onClick={() => spot.status === "AVAILABLE" && setSelectedSpotModal(spot)}
-                      disabled={spot.status !== "AVAILABLE"}
-                      className={cn(
-                        "w-16 h-20 rounded-lg border flex flex-col items-center justify-center gap-1 transition-all",
-                        getSpotStyles(spot)
-                      )}
-                      title={`${spot.number}번 (${SPOT_TYPE_LABELS[spot.type]}) - ${getStatusText(spot.status)}`}
-                    >
-                      <span className="text-[10px] font-semibold opacity-70">
-                        {SPOT_TYPE_LABELS[spot.type]}
-                      </span>
-                      <span className="text-sm font-bold">
-                        {spot.number}
-                      </span>
-                    </button>
-                  ))}
+                {localSpots.slice(rowIdx * 5, (rowIdx + 1) * 5).map((spot) => (
+                  <button
+                    key={spot.id}
+                    onClick={() => handleSpotClick(spot)}
+                    disabled={spot.status !== "AVAILABLE"}
+                    className={cn(
+                      "w-16 h-20 rounded-lg border flex flex-col items-center justify-center gap-1 transition-all",
+                      getSpotStyles(spot)
+                    )}
+                    title={`${spot.number}번 (${SPOT_TYPE_LABELS[spot.type]}) - ${getStatusText(spot.status)}`}
+                  >
+                    <span className="text-[10px] font-semibold opacity-70">
+                      {SPOT_TYPE_LABELS[spot.type]}
+                    </span>
+                    <span className="text-sm font-bold">{spot.number}</span>
+                  </button>
+                ))}
               </div>
             ))}
           </div>
-
           <div className="h-8 border-y-2 border-dashed border-muted-foreground/30 my-4 flex items-center justify-center">
             <span className="text-xs font-medium text-muted-foreground tracking-widest bg-muted/30 px-4 rounded-md">
               차 량 이 동 통 로
@@ -176,29 +136,17 @@ export function ParkingSpotSelector({
         </div>
       </div>
 
-      {/* 선점 확인 모달 */}
-      {selectedSpotModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-xl bg-background p-6 shadow-lg border">
-            <h3 className="text-lg font-semibold text-foreground mb-4">자리 선점 확인</h3>
-            <div className="rounded-lg border bg-muted/30 p-4 mb-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-2xl font-bold text-foreground">{selectedSpotModal.number}번 자리</p>
-                  <p className="text-sm text-muted-foreground mt-1">{SPOT_TYPE_LABELS[selectedSpotModal.type]} 구역</p>
-                </div>
-                <div className={cn("w-12 h-12 rounded-lg border flex items-center justify-center", getSpotStyles(selectedSpotModal))}>
-                   <Check className="w-6 h-6 opacity-70" />
-                </div>
-              </div>
-            </div>
-            <p className="text-sm text-muted-foreground mb-6">
-              해당 자리를 선점하시겠습니까?<br/>선점 후 5분 이내에 결제를 완료해야 예약이 확정됩니다.
+      {/* 선택된 자리 안내 */}
+      {selectedSpot && (
+        <div className="rounded-lg border border-[#2563eb] bg-[#eef4ff] p-4 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-[#2563eb] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+            {selectedSpot.number}
+          </div>
+          <div>
+            <p className="font-semibold text-[#2563eb]">{selectedSpot.number}번 자리 선택됨</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {SPOT_TYPE_LABELS[selectedSpot.type]} 구역 · 시간 선택하기를 눌러 계속하세요
             </p>
-            <div className="flex gap-2">
-              <button onClick={() => setSelectedSpotModal(null)} className="flex-1 h-10 rounded-md border border-input bg-background text-sm font-medium hover:bg-accent transition-colors">취소</button>
-              <button onClick={handleReserve} className="flex-1 h-10 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors">선점하기</button>
-            </div>
           </div>
         </div>
       )}
