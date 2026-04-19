@@ -71,7 +71,7 @@ export default function ParkingLotReservePage() {
   const fetchSpots = useCallback(async () => {
     if (!user?.accessToken) return;
     try {
-      const res = await parkingLotApi.getAvailableSpots(user.accessToken, parkingLotId);
+      const res = await parkingLotApi.getAllSpots(user.accessToken, parkingLotId);
       setSpots(res.data);
     } catch {
       setSpots([]);
@@ -87,36 +87,36 @@ export default function ParkingLotReservePage() {
   }, [step, fetchSpots, authLoading, user]);
 
   // SSE 구독 - step 1(자리 선택)에서만 연결, step 2로 가면 끊기
-useEffect(() => {
-  if (!user?.accessToken || step !== 1) return;
+  useEffect(() => {
+    if (!user?.accessToken || step !== 1) return;
 
-  const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
-  const eventSource = new EventSource(
-    `${BASE_URL}/api/parking-spots/${parkingLotId}/subscribe`,
-    { withCredentials: false }
-  );
+    const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+    const eventSource = new EventSource(
+      `${BASE_URL}/api/parking-spots/${parkingLotId}/subscribe`,
+      { withCredentials: false }
+    );
 
-  eventSource.onmessage = (e) => {
-    // 최초 연결 확인 이벤트는 무시
-    if (e.data === "connected") return;
+    eventSource.onmessage = (e) => {
+      // 최초 연결 확인 이벤트는 무시
+      if (e.data === "connected") return;
 
-    try {
-      const updatedSpot = JSON.parse(e.data);
-      // 받은 자리 상태로 spots 배열 업데이트
-      setSpots((prev) =>
-        prev.map((s) => (s.id === updatedSpot.id ? { ...s, ...updatedSpot } : s))
-      );
-      // 내가 선택한 자리가 다른 사람에게 선점됐으면 선택 해제
-      setSelectedSpot((prev) => {
-        if (prev && prev.id === updatedSpot.id && updatedSpot.status !== "AVAILABLE") {
-          return null;
-        }
-        return prev;
-      });
-    } catch (err) {
-      console.error("SSE 데이터 파싱 실패:", err);
-    }
-  };
+      try {
+        const updatedSpot = JSON.parse(e.data);
+        // 받은 자리 상태로 spots 배열 업데이트
+        setSpots((prev) =>
+          prev.map((s) => (s.id === updatedSpot.id ? { ...s, ...updatedSpot } : s))
+        );
+        // 내가 선택한 자리가 다른 사람에게 선점됐으면 선택 해제
+        setSelectedSpot((prev) => {
+          if (prev && prev.id === updatedSpot.id && updatedSpot.status !== "AVAILABLE") {
+            return null;
+          }
+          return prev;
+        });
+      } catch (err) {
+        console.error("SSE 데이터 파싱 실패:", err);
+      }
+    };
 
   eventSource.onerror = () => {
     eventSource.close();
