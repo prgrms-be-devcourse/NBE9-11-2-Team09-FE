@@ -28,6 +28,10 @@ function formatPrice(value?: number) {
 }
 
 export default function ParkingLotDetailPage() {
+  // ----------------------------
+  // 5. URL 파라미터에서 주차장 id 추출
+  // ----------------------------
+  // 예: /parking-lots/3 → id = "3"
   const params = useParams();
   const { user, isLoading: authLoading } = useAuth();
   const parkingLotId = Number(params?.id);
