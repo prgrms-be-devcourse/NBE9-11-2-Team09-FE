@@ -58,9 +58,9 @@ export default function LoginPage() {
               Public Parking Reservation
             </p>
             <h1 className="text-4xl font-bold leading-tight">
-              가까운 공영주차장을
+              공영주차장 예약시스템
               <br />
-              더 빠르게 예약하세요
+              
             </h1>
             <p className="mt-5 text-base leading-7 text-sky-50/90">
               로그인 후 주차장 조회, 예약, 프로필 관리까지 한 번에 이용할 수
