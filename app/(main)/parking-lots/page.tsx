@@ -1,138 +1,130 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import {
-  CalendarDays,
-  Car,
-  ChevronLeft,
-  ChevronRight,
-  Clock3,
-  FileText,
-  MapPin,
-  Search,
-} from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
 import { Header } from "@/components/layout/header";
 import { ParkingLot, parkingLotApi } from "@/lib/api";
 import { ParkingLotCard } from "@/components/parking/parking-lot-card";
+import { SearchFilters, type FilterOptions } from "@/components/parking/search-filters";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  AlertCircle,
+  MapPin,
+  RefreshCw,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 // 한 페이지에 보여줄 카드 개수
-const ITEMS_PER_PAGE = 4;
+const ITEMS_PER_PAGE = 6;
 
 export default function ParkingLotsPage() {
-  // ----------------------------
-  // 1. 화면에 필요한 상태들
-  // ----------------------------
+  const { user, isLoading: authLoading } = useAuth();
 
-  // 서버에서 받아온 전체 주차장 목록 (데이터)
   const [parkingLots, setParkingLots] = useState<ParkingLot[]>([]);
 
-  // API 호출 상태 (로딩, 에러 여부)
+  // API 호출 상태
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // inputValue: 사용자가 입력창에 "지금 치고 있는 값"
-  // searchKeyword: 실제 검색 버튼 / 엔터를 눌러서 검색에 반영된 값
-  // 둘을 분리해두면 입력 중일 때마다 바로 검색되지 않아서 흐름이 안정적임
-  const [inputValue, setInputValue] = useState("");
-  const [searchKeyword, setSearchKeyword] = useState("");
-
-  // 현재 페이지 번호
   const [currentPage, setCurrentPage] = useState(1);
+  const [filters, setFilters] = useState<FilterOptions>({ sortBy: "name", hasAvailable: false });
 
-  // ----------------------------
-  // 2. 목록 조회 함수
-  // ----------------------------
-  // 검색어가 있으면 해당 동으로 조회 / 검색어가 없으면 전체 조회만 처리
-  const fetchParkingLots = async (keyword?: string) => {
+  // ─── 목록 조회 ───────────────────────────────────────────
+  const fetchParkingLots = async (dong?: string) => {
+    if (!user?.accessToken) return;
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true); // 로딩 시작
-      setError(null); // 이전 에러 초기화
-      
-      const cleanedKeyword = keyword?.trim() || undefined; // 검색어 정리 (공백 제거 후 값이 없으면 undefined로 처리)
-
-      const response = await parkingLotApi.getList(cleanedKeyword); // API 호출
-
-      setParkingLots(response.data); // 실제 데이터 추출
-
+      const response = await parkingLotApi.getList(user.accessToken, dong);
+      const lots = response.data;
+      setParkingLots(lots);
+      applySort(lots, filters);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "주차장 목록 조회에 실패했습니다."
-      );
+      setError(err instanceof Error ? err.message : "주차장 목록을 불러오지 못했습니다.");
       setParkingLots([]);
+      setFilteredLots([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // ----------------------------
-  // 3. 최초 진입 시 전체 목록 조회
-  // ----------------------------
   useEffect(() => {
-    fetchParkingLots();
-  }, []);
+    if (!authLoading && user?.accessToken) fetchParkingLots();
+  }, [authLoading, user]);
 
-  // ----------------------------
-  // 4. 검색 실행
-  // ----------------------------
-  const handleSearch = () => { // 검색 버튼 클릭 또는 Enter 입력 시 실행되는 함수
-    // 사용자가 입력창에 적은 값을 공백 제거 후 검색어로 사용
-    const keyword = inputValue.trim(); // 입력창 값 정리
-
-    // 실제 검색 기준이 되는 상태값 저장
-    setSearchKeyword(keyword); // 검색어 상태 업데이트
-    setCurrentPage(1); // 검색 후 첫 페이지로 이동
-    fetchParkingLots(keyword); // 실제 검색 요청
+  // ─── 정렬 적용 ───────────────────────────────────────────
+  const applySort = (lots: ParkingLot[], f: FilterOptions) => {
+    let sorted = [...lots];
+    if (f.sortBy === "price") {
+      sorted.sort((a, b) => a.price - b.price);
+    } else {
+      sorted.sort((a, b) => a.name.localeCompare(b.name, "ko"));
+    }
+    setFilteredLots(sorted);
+    setCurrentPage(1);
   };
 
-  // ----------------------------
-  // 5. 페이지네이션 계산
-  // ----------------------------
-  const totalPages = Math.max(
-    1,
-    Math.ceil(parkingLots.length / ITEMS_PER_PAGE)
-  );
+  // ─── 검색 핸들러 (SearchFilters → 프론트 필터) ──────────
+  const handleSearch = (query: string) => {
+    if (!query) {
+      applySort(parkingLots, filters);
+      return;
+    }
+    const matched = parkingLots.filter(
+      (l) =>
+        l.name.toLowerCase().includes(query.toLowerCase()) ||
+        l.address.toLowerCase().includes(query.toLowerCase())
+    );
+    applySort(matched, filters);
+  };
 
-  // 현재 페이지에 보여줄 목록만 잘라서 사용
+  // ─── 필터 변경 ───────────────────────────────────────────
+  const handleFilterChange = (newFilters: FilterOptions) => {
+    setFilters(newFilters);
+    applySort(filteredLots, newFilters);
+  };
+
+  // ─── 페이지네이션 ────────────────────────────────────────
+  const totalPages = Math.max(1, Math.ceil(filteredLots.length / ITEMS_PER_PAGE));
+
   const pagedLots = useMemo(() => {
-    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-    return parkingLots.slice(startIndex, startIndex + ITEMS_PER_PAGE);
-  }, [parkingLots, currentPage]);
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredLots.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredLots, currentPage]);
 
-  // 검색어가 바뀌면 첫 페이지로 이동
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchKeyword]);
-
-  // 페이지네이션에 노출할 페이지 번호 목록
   const visiblePages = useMemo(() => {
     const maxVisible = 5;
     const start = Math.max(1, currentPage - 2);
     const end = Math.min(totalPages, start + maxVisible - 1);
-
     return Array.from({ length: end - start + 1 }, (_, i) => start + i);
   }, [currentPage, totalPages]);
 
+  // ─── 렌더링 ──────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-[#f3f6fb] text-slate-900">
       <Header />
 
       <main className="mx-auto max-w-[1280px] px-4 pb-14 md:px-6">
-        {/* 히어로 섹션 */}
+
+        {/* ── 히어로 배너 (dev) ── */}
         <section className="overflow-hidden bg-[#eaf1ff]">
           <div className="flex min-h-[220px] items-center justify-between px-6 py-10 md:px-10">
             <div>
               <h1 className="mb-3 text-[38px] font-extrabold leading-none tracking-[-0.03em] md:text-[56px]">
-                <span className="text-[#2563eb]">강남구</span> <span className="text-slate-900">공영주차장</span>
+                <span className="text-[#2563eb]">강남구</span>{" "}
+                <span className="text-slate-900">공영주차장</span>
               </h1>
               <p className="mb-6 text-[16px] font-medium text-slate-600 md:text-[18px]">
                 강남구 내 공영주차장을 검색하고 정보를 확인하세요.
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="rounded-full bg-white px-5 py-3 text-[15px] font-semibold text-slate-700">
-                  전체 <span className="ml-1 text-[18px] text-[#2563eb]">{parkingLots.length}</span>개
+                  전체{" "}
+                  <span className="ml-1 text-[18px] text-[#2563eb]">
+                    {parkingLots.length}
+                  </span>
+                  개
                 </div>
                 <div className="flex items-center gap-2 rounded-full bg-white px-5 py-3 text-[15px] font-semibold text-slate-700">
                   <MapPin className="h-4 w-4 text-[#2563eb]" />
@@ -140,74 +132,114 @@ export default function ParkingLotsPage() {
                 </div>
               </div>
             </div>
-          </div>
-        </section>
 
-        {/* 검색 섹션 */}
-        <section className="mt-5 rounded-[20px] bg-white px-5 py-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:px-7">
-          <div className="flex flex-col gap-4 lg:flex-row">
-            <div className="relative flex-1">
-              <Search className="absolute left-5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-              <input
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                placeholder="OO동으로 입력해주세요."
-                className="h-[56px] w-full rounded-[14px] border border-slate-200 bg-white pl-14 pr-4 text-[16px] outline-none placeholder:text-slate-400 focus:border-[#2563eb]"
-              />
+            {/* 데코 일러스트 */}
+            <div className="hidden lg:block">
+              <div className="flex items-end gap-10">
+                {/* 자동차 */}
+                <div className="relative h-[90px] w-[160px]">
+                  <div className="absolute bottom-0 left-[20px] h-[24px] w-[20px] rounded-md bg-slate-800" />
+                  <div className="absolute bottom-0 right-[20px] h-[24px] w-[20px] rounded-md bg-slate-800" />
+                  <div className="absolute bottom-[45px] left-[30px] h-[35px] w-[100px] rounded-t-2xl bg-[#2563eb]" />
+                  <div className="absolute bottom-[45px] left-[38px] h-[25px] w-[84px] rounded-t-xl bg-slate-200" />
+                  <div className="absolute bottom-[40px] left-[18px] h-[12px] w-[12px] rounded-l-md bg-[#2563eb]" />
+                  <div className="absolute bottom-[40px] right-[18px] h-[12px] w-[12px] rounded-r-md bg-[#2563eb]" />
+                  <div className="absolute bottom-[10px] left-0 h-[45px] w-[160px] rounded-xl bg-[#2563eb] shadow-md" />
+                  <div className="absolute bottom-[25px] left-[50px] h-[14px] w-[60px] rounded-sm bg-slate-800" />
+                  <div className="absolute bottom-[30px] left-[16px] h-[14px] w-[14px] rounded-full bg-[#FFFBFA]" />
+                  <div className="absolute bottom-[30px] right-[16px] h-[14px] w-[14px] rounded-full bg-[#FFFBFA]" />
+                  <div className="absolute bottom-[14px] left-[65px] h-[8px] w-[30px] rounded-sm bg-white" />
+                </div>
+
+                {/* P 표지판 */}
+                <div className="flex flex-col items-center">
+                  <div className="flex h-[54px] w-[54px] items-center justify-center rounded-[12px] bg-[#2563eb] text-white shadow">
+                    <span className="text-[32px] font-bold">P</span>
+                  </div>
+                  <div className="h-[100px] w-[14px] rounded bg-[#2563eb]" />
+                </div>
+              </div>
             </div>
-            <button
-              onClick={handleSearch}
-              className="flex h-[56px] items-center justify-center rounded-[14px] bg-[#2563eb] px-9 text-[18px] font-semibold text-white hover:bg-[#1d4ed8]"
-            >
-              <Search className="mr-2 h-5 w-5" /> 검색
-            </button>
           </div>
         </section>
 
-        <section className="mt-5">
-          <p className="text-[18px] font-semibold text-slate-900">
-            총 <span className="text-[#2563eb]">{parkingLots.length}</span>개의 주차장이 있습니다.
-          </p>
+        {/* ── 검색/필터 (cus03-04 SearchFilters) ── */}
+        <section className="mt-5 rounded-[20px] bg-white px-5 py-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:px-7">
+          <SearchFilters onSearch={handleSearch} onFilterChange={handleFilterChange} />
         </section>
 
-        {/* 리스트 섹션 */}
+        {/* ── 결과 수 + 새로고침 ── */}
+        <section className="mt-5 flex items-center justify-between">
+          <p className="text-[18px] font-semibold text-slate-900">
+            총{" "}
+            <span className="text-[#2563eb]">{filteredLots.length}</span>개의
+            주차장
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => fetchParkingLots()}
+            disabled={loading}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            새로고침
+          </Button>
+        </section>
+
+        {/* ── 상태별 렌더링 ── */}
         {loading ? (
-          <div className="py-20 text-center text-slate-500">주차장 목록을 불러오는 중...</div>
+          <div className="flex flex-col items-center justify-center py-20">
+            <Loader2 className="mb-4 h-8 w-8 animate-spin text-[#2563eb]" />
+            <p className="text-slate-500">주차장을 불러오는 중...</p>
+          </div>
         ) : error ? (
-          <div className="mt-6 rounded-[20px] bg-white px-6 py-10 text-center text-red-500 shadow-sm">{error}</div>
-        ) : parkingLots.length === 0 ? (
-          <div className="mt-6 rounded-[20px] bg-white px-6 py-10 text-center text-slate-500 shadow-sm">검색 결과가 없습니다.</div>
+          <div className="mt-6 flex flex-col items-center justify-center rounded-[20px] bg-white py-16 shadow-sm">
+            <AlertCircle className="mb-4 h-12 w-12 text-red-500" />
+            <p className="mb-4 font-medium text-red-500">{error}</p>
+            <Button onClick={() => fetchParkingLots()}>다시 시도</Button>
+          </div>
+        ) : filteredLots.length === 0 ? (
+          <div className="mt-6 rounded-[20px] bg-white px-6 py-10 text-center text-slate-500 shadow-sm">
+            검색 결과가 없습니다.
+          </div>
         ) : (
           <>
-            <section className="mt-5 space-y-4">
+            {/* ── 카드 그리드 (cus03-04 ParkingLotCard) ── */}
+            <section className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
               {pagedLots.map((lot) => (
                 <ParkingLotCard key={lot.id} parkingLot={lot} />
               ))}
             </section>
 
-            {/* 페이지네이션 */}
+            {/* ── 페이지네이션 (dev) ── */}
             <section className="mt-8 flex items-center justify-center gap-2">
               <button
-                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
                 className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-white text-slate-500 disabled:opacity-50"
               >
                 <ChevronLeft className="h-5 w-5" />
               </button>
+
               {visiblePages.map((page) => (
                 <button
                   key={page}
+                  type="button"
                   onClick={() => setCurrentPage(page)}
                   className={`h-10 w-10 rounded-[10px] text-[18px] font-semibold ${
-                    page === currentPage ? "bg-[#2563eb] text-white" : "bg-transparent text-slate-800"
+                    page === currentPage
+                      ? "bg-[#2563eb] text-white"
+                      : "bg-transparent text-slate-800"
                   }`}
                 >
                   {page}
                 </button>
               ))}
+
               <button
-                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
                 className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-white text-slate-700 disabled:opacity-50"
               >
@@ -217,6 +249,24 @@ export default function ParkingLotsPage() {
           </>
         )}
       </main>
+
+      {/* ── 푸터 (dev) ── */}
+      <footer className="mt-10 border-t border-slate-200 bg-[#f3f6fb]">
+        <div className="mx-auto flex max-w-[1280px] flex-col gap-4 px-6 py-8 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h3 className="mb-2 text-[18px] font-bold text-slate-900">주차장 조회 서비스</h3>
+            <p className="text-[15px] text-slate-500">강남구 공영주차장 정보를 제공합니다.</p>
+          </div>
+          <div className="text-left md:text-right">
+            <div className="mb-2 flex flex-wrap items-center gap-4 text-[15px] font-semibold text-slate-800 md:justify-end md:gap-6">
+              <span>이용약관</span>
+              <span>개인정보처리방침</span>
+              <span>문의하기</span>
+            </div>
+            <p className="text-[15px] text-slate-500">© 2024 Parking Info. All rights reserved.</p>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

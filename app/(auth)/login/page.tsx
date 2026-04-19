@@ -22,10 +22,7 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      // auth-context의 login()이 내부적으로
-      // userEmail 필드명 변환 + 토큰 저장 + 프로필 로드 처리
       await login(email, password);
-      router.push("/parking-lots");
     } catch (err) {
       // apiRequest에서 error.msg를 throw하므로 그대로 표시
       setError(err instanceof Error ? err.message : "로그인에 실패했습니다.");
