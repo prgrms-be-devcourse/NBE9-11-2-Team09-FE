@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { Button } from "@/components/ui/button";
@@ -8,9 +8,8 @@ import { useAuth } from "@/lib/auth-context";
 import { paymentApi } from "@/lib/api";
 import {
   ArrowLeft, MapPin, Calendar, Clock,
-  CreditCard, Check, Loader2, AlertCircle, Shield,
+  CreditCard, Loader2, AlertCircle, Shield,
 } from "lucide-react";
-import Link from "next/link";
 
 interface PendingReservation {
   reservationId: number;
@@ -29,6 +28,8 @@ export default function ReservationConfirmPage() {
   const [reservation, setReservation] = useState<PendingReservation | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [timeLeft, setTimeLeft] = useState(300);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const stored = sessionStorage.getItem("pendingReservation");
@@ -38,6 +39,40 @@ export default function ReservationConfirmPage() {
       router.push("/parking-lots");
     }
   }, [router]);
+
+  // 5분 타이머 - 만료 시 alert + 주차장 목록으로 이동
+  useEffect(() => {
+    if (!reservation) return;
+
+    timerRef.current = setTimeout(() => {
+      sessionStorage.removeItem("pendingReservation");
+      alert("결제 시간이 초과되었습니다. 예약이 자동 취소됩니다.");
+      router.push("/parking-lots");
+    }, 300000);
+
+    const countdown = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(countdown);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      clearTimeout(timerRef.current!);
+      clearInterval(countdown);
+    };
+  }, [reservation, router]);
+
+  const formatTimeLeft = () => {
+    const m = Math.floor(timeLeft / 60);
+    const s = timeLeft % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
+
+  const isUrgent = timeLeft <= 60;
 
   const formatDateTime = (backendDt: string) => {
     const d = new Date(backendDt.replace(" ", "T"));
@@ -55,9 +90,9 @@ export default function ReservationConfirmPage() {
     return diff < 60 ? `${diff}분` : `${diff/60}시간`;
   };
 
-  // 예약은 이미 생성됨 → 결제만 시작
   const handleConfirm = async () => {
     if (!reservation || !user?.accessToken) return;
+    clearTimeout(timerRef.current!);
     setLoading(true);
     setError(null);
 
@@ -67,10 +102,8 @@ export default function ReservationConfirmPage() {
         amount: reservation.totalPrice,
       });
 
-      const paymentId = payRes.data.paymentId;
-
       router.push(
-        `/payment?parkingLotId=${reservation.parkingLotId}&price=${reservation.totalPrice}&paymentId=${paymentId}`
+        `/payment?parkingLotId=${reservation.parkingLotId}&price=${reservation.totalPrice}&paymentId=${payRes.data.paymentId}`
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "결제 시작에 실패했습니다.");
@@ -97,7 +130,17 @@ export default function ReservationConfirmPage() {
         <button onClick={() => router.back()} className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6">
           <ArrowLeft className="w-4 h-4" /><span>뒤로가기</span>
         </button>
-        <h1 className="text-2xl font-bold text-foreground mb-6">예약 확인</h1>
+        <h1 className="text-2xl font-bold text-foreground mb-4">예약 확인</h1>
+
+        {/* 타이머 배너 */}
+        <div className={`flex items-center justify-between rounded-xl px-4 py-3 mb-6 ${isUrgent ? "bg-red-50 border border-red-200" : "bg-amber-50 border border-amber-200"}`}>
+          <p className={`text-sm font-medium ${isUrgent ? "text-red-700" : "text-amber-700"}`}>
+            자리가 선점되었습니다. 시간 내에 결제를 완료해주세요.
+          </p>
+          <span className={`text-xl font-extrabold tabular-nums ml-4 flex-shrink-0 ${isUrgent ? "text-red-600" : "text-amber-600"}`}>
+            {formatTimeLeft()}
+          </span>
+        </div>
 
         <div className="bg-card border border-border rounded-xl p-6 mb-6 space-y-4">
           <h2 className="font-semibold text-foreground">예약 정보</h2>
@@ -120,19 +163,19 @@ export default function ReservationConfirmPage() {
         <div className="bg-card border border-border rounded-xl p-6 mb-6">
           <h2 className="font-semibold text-foreground mb-4">예약자 정보</h2>
           <div className="space-y-3 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">이름</span><span className="text-foreground">{profile?.userName ?? "-"}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">이메일</span><span className="text-foreground">{profile?.userEmail ?? "-"}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">차량번호</span><span className="text-foreground">{profile?.plateNumber ?? "-"}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">이름</span><span>{profile?.userName ?? "-"}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">이메일</span><span>{profile?.userEmail ?? "-"}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">차량번호</span><span>{profile?.plateNumber ?? "-"}</span></div>
           </div>
         </div>
 
         <div className="bg-card border border-border rounded-xl p-6 mb-6">
           <h2 className="font-semibold text-foreground mb-4">결제 정보</h2>
           <div className="space-y-3 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">주차 요금</span><span className="text-foreground">{reservation.totalPrice.toLocaleString()}원</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">할인</span><span className="text-foreground">0원</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">주차 요금</span><span>{reservation.totalPrice.toLocaleString()}원</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">할인</span><span>0원</span></div>
             <div className="h-px bg-border my-2" />
-            <div className="flex justify-between"><span className="font-medium text-foreground">총 결제 금액</span><span className="font-bold text-lg text-foreground">{reservation.totalPrice.toLocaleString()}원</span></div>
+            <div className="flex justify-between"><span className="font-medium">총 결제 금액</span><span className="font-bold text-lg">{reservation.totalPrice.toLocaleString()}원</span></div>
           </div>
         </div>
 
