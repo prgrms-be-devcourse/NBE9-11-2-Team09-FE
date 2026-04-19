@@ -1,23 +1,23 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
-import { reservationApi, paymentApi } from "@/lib/api";
+import { paymentApi } from "@/lib/api";
 import {
-  ArrowLeft, MapPin, Calendar, Clock, Car,
-  CreditCard, Check, Loader2, AlertCircle, Shield,
+  ArrowLeft, MapPin, Calendar, Clock,
+  CreditCard, Loader2, AlertCircle, Shield,
 } from "lucide-react";
-import Link from "next/link";
 
 interface PendingReservation {
+  reservationId: number;
   parkingLotId: number;
   parkingLotName: string;
   spotId: number;
   spotNumber: string;
-  startTime: string;  // "yyyy-MM-dd HH:mm:ss"
+  startTime: string;
   endTime: string;
   totalPrice: number;
 }
@@ -27,8 +27,9 @@ export default function ReservationConfirmPage() {
   const { user, profile } = useAuth();
   const [reservation, setReservation] = useState<PendingReservation | null>(null);
   const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState<"confirm" | "success">("confirm");
   const [error, setError] = useState<string | null>(null);
+  const [timeLeft, setTimeLeft] = useState(300);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const stored = sessionStorage.getItem("pendingReservation");
@@ -39,8 +40,41 @@ export default function ReservationConfirmPage() {
     }
   }, [router]);
 
+  // 5분 타이머 - 만료 시 alert + 주차장 목록으로 이동
+  useEffect(() => {
+    if (!reservation) return;
+
+    timerRef.current = setTimeout(() => {
+      sessionStorage.removeItem("pendingReservation");
+      alert("결제 시간이 초과되었습니다. 예약이 자동 취소됩니다.");
+      router.push("/parking-lots");
+    }, 300000);
+
+    const countdown = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(countdown);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      clearTimeout(timerRef.current!);
+      clearInterval(countdown);
+    };
+  }, [reservation, router]);
+
+  const formatTimeLeft = () => {
+    const m = Math.floor(timeLeft / 60);
+    const s = timeLeft % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
+
+  const isUrgent = timeLeft <= 60;
+
   const formatDateTime = (backendDt: string) => {
-    // "yyyy-MM-dd HH:mm:ss" → Date
     const d = new Date(backendDt.replace(" ", "T"));
     const days = ["일","월","화","수","목","금","토"];
     return {
@@ -58,38 +92,21 @@ export default function ReservationConfirmPage() {
 
   const handleConfirm = async () => {
     if (!reservation || !user?.accessToken) return;
+    clearTimeout(timerRef.current!);
     setLoading(true);
     setError(null);
 
     try {
-      // 1. POST /api/reservations
-      // ReservationReqDto: { parkingLotId, parkingSpotId, startTime, endTime }
-      const resRes = await reservationApi.create(user.accessToken, {
-        parkingLotId: reservation.parkingLotId,
-        parkingSpotId: reservation.spotId,
-        startTime: reservation.startTime,  // 이미 "yyyy-MM-dd HH:mm:ss" 형식
-        endTime: reservation.endTime,
-      });
-
-      // reservationId 사용
-      const reservationId = resRes.data.reservationId;
-
-      // 2. POST /api/payments { reservationId, amount }
       const payRes = await paymentApi.start(user.accessToken, {
-        reservationId,
+        reservationId: reservation.reservationId,
         amount: reservation.totalPrice,
       });
 
-      // paymentId 사용
-      const paymentId = payRes.data.paymentId;
-
-      // 3. POST /api/payments/{paymentId}/approve
-      await paymentApi.approve(user.accessToken, paymentId);
-
-      sessionStorage.removeItem("pendingReservation");
-      setStep("success");
+      router.push(
+        `/payment?parkingLotId=${reservation.parkingLotId}&price=${reservation.totalPrice}&paymentId=${payRes.data.paymentId}`
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "예약에 실패했습니다.");
+      setError(err instanceof Error ? err.message : "결제 시작에 실패했습니다.");
     } finally {
       setLoading(false);
     }
@@ -106,51 +123,6 @@ export default function ReservationConfirmPage() {
   const s = formatDateTime(reservation.startTime);
   const e = formatDateTime(reservation.endTime);
 
-  if (step === "success") return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      <main className="max-w-lg mx-auto px-4 py-12">
-        <div className="text-center mb-8">
-          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Check className="w-10 h-10 text-green-600" />
-          </div>
-          <h1 className="text-2xl font-bold text-foreground mb-2">예약이 완료되었습니다!</h1>
-          <p className="text-muted-foreground">내 예약 페이지에서 확인할 수 있습니다</p>
-        </div>
-
-        <div className="bg-card border border-border rounded-xl p-6 mb-6 space-y-3">
-          <h2 className="font-semibold text-foreground">예약 정보</h2>
-          <div className="flex items-start gap-3">
-            <MapPin className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium text-foreground">{reservation.parkingLotName}</p>
-              <p className="text-sm text-muted-foreground">{reservation.spotNumber}번 자리</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-3">
-            <Calendar className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium text-foreground">{s.date}</p>
-              <p className="text-sm text-muted-foreground">{s.time} ~ {e.time} ({getDuration()})</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-3">
-            <CreditCard className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium text-foreground">{reservation.totalPrice.toLocaleString()}원</p>
-              <p className="text-sm text-muted-foreground">결제 완료</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex gap-3">
-          <Link href="/reservations" className="flex-1"><Button variant="outline" className="w-full">예약 확인하기</Button></Link>
-          <Link href="/parking-lots" className="flex-1"><Button className="w-full">홈으로</Button></Link>
-        </div>
-      </main>
-    </div>
-  );
-
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -158,49 +130,59 @@ export default function ReservationConfirmPage() {
         <button onClick={() => router.back()} className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6">
           <ArrowLeft className="w-4 h-4" /><span>뒤로가기</span>
         </button>
-        <h1 className="text-2xl font-bold text-foreground mb-6">예약 확인</h1>
+        <h1 className="text-2xl font-bold text-foreground mb-4">예약 확인</h1>
 
-        {/* 예약 정보 */}
+        {/* 타이머 배너 */}
+        <div className={`flex items-center justify-between rounded-xl px-4 py-3 mb-6 ${isUrgent ? "bg-red-50 border border-red-200" : "bg-amber-50 border border-amber-200"}`}>
+          <p className={`text-sm font-medium ${isUrgent ? "text-red-700" : "text-amber-700"}`}>
+            자리가 선점되었습니다. 시간 내에 결제를 완료해주세요.
+          </p>
+          <span className={`text-xl font-extrabold tabular-nums ml-4 flex-shrink-0 ${isUrgent ? "text-red-600" : "text-amber-600"}`}>
+            {formatTimeLeft()}
+          </span>
+        </div>
+
         <div className="bg-card border border-border rounded-xl p-6 mb-6 space-y-4">
           <h2 className="font-semibold text-foreground">예약 정보</h2>
           {[
-            { icon: MapPin,    label: "주차장",   value: reservation.parkingLotName, sub: `${reservation.spotNumber}번 자리` },
-            { icon: Calendar,  label: "이용 날짜", value: s.date },
-            { icon: Clock,     label: "이용 시간", value: `${s.time} ~ ${e.time} (${getDuration()})` },
+            { icon: MapPin,   label: "주차장",   value: reservation.parkingLotName, sub: `${reservation.spotNumber}번 자리` },
+            { icon: Calendar, label: "이용 날짜", value: s.date },
+            { icon: Clock,    label: "이용 시간", value: `${s.time} ~ ${e.time} (${getDuration()})` },
           ].map(({ icon: Icon, label, value, sub }) => (
             <div key={label} className="flex items-start gap-3 pb-4 border-b border-border last:border-0 last:pb-0">
               <Icon className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-              <div><p className="text-sm text-muted-foreground">{label}</p><p className="font-medium text-foreground">{value}</p>{sub && <p className="text-sm text-muted-foreground">{sub}</p>}</div>
+              <div>
+                <p className="text-sm text-muted-foreground">{label}</p>
+                <p className="font-medium text-foreground">{value}</p>
+                {sub && <p className="text-sm text-muted-foreground">{sub}</p>}
+              </div>
             </div>
           ))}
         </div>
 
-        {/* 예약자 정보 - profile 사용 */}
         <div className="bg-card border border-border rounded-xl p-6 mb-6">
           <h2 className="font-semibold text-foreground mb-4">예약자 정보</h2>
           <div className="space-y-3 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">이름</span><span className="text-foreground">{profile?.userName ?? "-"}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">이메일</span><span className="text-foreground">{profile?.userEmail ?? "-"}</span></div>
-            {/* plateNumber 사용 */}
-            <div className="flex justify-between"><span className="text-muted-foreground">차량번호</span><span className="text-foreground">{profile?.plateNumber ?? "-"}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">이름</span><span>{profile?.userName ?? "-"}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">이메일</span><span>{profile?.userEmail ?? "-"}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">차량번호</span><span>{profile?.plateNumber ?? "-"}</span></div>
           </div>
         </div>
 
-        {/* 결제 정보 */}
         <div className="bg-card border border-border rounded-xl p-6 mb-6">
           <h2 className="font-semibold text-foreground mb-4">결제 정보</h2>
           <div className="space-y-3 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">주차 요금</span><span className="text-foreground">{reservation.totalPrice.toLocaleString()}원</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">할인</span><span className="text-foreground">0원</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">주차 요금</span><span>{reservation.totalPrice.toLocaleString()}원</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">할인</span><span>0원</span></div>
             <div className="h-px bg-border my-2" />
-            <div className="flex justify-between"><span className="font-medium text-foreground">총 결제 금액</span><span className="font-bold text-lg text-foreground">{reservation.totalPrice.toLocaleString()}원</span></div>
+            <div className="flex justify-between"><span className="font-medium">총 결제 금액</span><span className="font-bold text-lg">{reservation.totalPrice.toLocaleString()}원</span></div>
           </div>
         </div>
 
         <div className="bg-muted/50 rounded-lg p-4 mb-6">
           <div className="flex items-start gap-3">
             <Shield className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-muted-foreground">결제 진행 시 이용약관에 동의하는 것으로 간주됩니다. 이용 시작 1시간 전까지 취소 가능합니다.</p>
+            <p className="text-xs text-muted-foreground">결제 진행 시 이용약관에 동의하는 것으로 간주됩니다. 이용 시작 30분 전까지 취소 가능합니다.</p>
           </div>
         </div>
 

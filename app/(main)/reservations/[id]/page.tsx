@@ -6,19 +6,13 @@ import { Header } from "@/components/layout/header";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
 import { reservationApi, type Reservation, RESERVATION_STATUS_LABELS } from "@/lib/api";
-import { ArrowLeft, Calendar, Clock, MapPin, Car, Loader2, AlertCircle, X } from "lucide-react";
+import { ArrowLeft, Calendar, Clock, MapPin, Car, Loader2, AlertCircle, X, CreditCard } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-const MOCK: Reservation = {
-  reservationId: 1, parkingLotName: "강남역 공영주차장", parkingSpotNumber: "A05",
-  startTime: new Date(Date.now() + 2 * 3600000).toISOString(),
-  endTime:   new Date(Date.now() + 4 * 3600000).toISOString(),
-  status: "CONFIRMED",
-};
-
 export default function ReservationDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const { user } = useAuth();
   const reservationId = Number(params.id);
 
@@ -33,8 +27,8 @@ export default function ReservationDetailPage() {
     try {
       const res = await reservationApi.getDetail(user.accessToken, reservationId);
       setReservation(res.data);
-    } catch {
-      setReservation({ ...MOCK, reservationId });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "예약 정보를 불러오지 못했습니다.");
     } finally {
       setLoading(false);
     }
@@ -46,7 +40,6 @@ export default function ReservationDetailPage() {
     if (!user?.accessToken || !reservation) return;
     setCancelling(true);
     try {
-      // PATCH /api/reservations/{id}/cancel — reservationId 사용
       await reservationApi.cancel(user.accessToken, reservation.reservationId);
       setReservation({ ...reservation, status: "CANCELED" });
       setShowCancelModal(false);
@@ -55,6 +48,25 @@ export default function ReservationDetailPage() {
     } finally {
       setCancelling(false);
     }
+  };
+
+  // PENDING 예약 → confirm 페이지로 이동
+  const handleGoToPayment = () => {
+    if (!reservation) return;
+    sessionStorage.setItem(
+      "pendingReservation",
+      JSON.stringify({
+        reservationId: reservation.reservationId,
+        parkingLotId: reservation.parkingLotId,
+        parkingLotName: reservation.parkingLotName,
+        spotId: reservation.parkingSpotId,
+        spotNumber: reservation.parkingSpotNumber,
+        startTime: reservation.startTime,
+        endTime: reservation.endTime,
+        totalPrice: reservation.totalPrice,
+      })
+    );
+    router.push("/reservation/confirm");
   };
 
   const formatDateTime = (iso: string) => {
@@ -69,7 +81,7 @@ export default function ReservationDetailPage() {
   const getDuration = () => {
     if (!reservation) return "";
     const diff = (new Date(reservation.endTime).getTime() - new Date(reservation.startTime).getTime()) / 60000;
-    return diff < 60 ? `${diff}분` : `${diff/60}시간`;
+    return diff < 60 ? `${diff}분` : `${diff / 60}시간`;
   };
 
   const getStatusStyle = (status: Reservation["status"]) => {
@@ -84,8 +96,8 @@ export default function ReservationDetailPage() {
 
   const canCancel = () => {
     if (!reservation) return false;
-    const hoursBefore = (new Date(reservation.startTime).getTime() - Date.now()) / 3600000;
-    return hoursBefore > 1 && (reservation.status === "PENDING" || reservation.status === "CONFIRMED");
+    const minutesBefore = (new Date(reservation.startTime).getTime() - Date.now()) / 60000;
+    return minutesBefore > 30 && (reservation.status === "PENDING" || reservation.status === "CONFIRMED");
   };
 
   if (loading) return (
@@ -96,11 +108,11 @@ export default function ReservationDetailPage() {
     </div>
   );
 
-  if (!reservation) return (
+  if (error || !reservation) return (
     <div className="min-h-screen bg-background"><Header />
       <div className="max-w-lg mx-auto px-4 py-20 flex flex-col items-center">
         <AlertCircle className="w-12 h-12 text-destructive mb-4" />
-        <p className="text-destructive font-medium mb-4">예약 정보를 찾을 수 없습니다</p>
+        <p className="text-destructive font-medium mb-4">{error ?? "예약 정보를 찾을 수 없습니다."}</p>
         <Link href="/reservations"><Button>목록으로 돌아가기</Button></Link>
       </div>
     </div>
@@ -127,26 +139,55 @@ export default function ReservationDetailPage() {
         <div className="bg-card border border-border rounded-xl p-6 mb-6 space-y-4">
           <h2 className="font-semibold text-foreground">예약 정보</h2>
           {[
-            { icon: MapPin, label: "주차장", value: reservation.parkingLotName },
-            { icon: Car,    label: "주차 자리", value: `${reservation.parkingSpotNumber}번` },
+            { icon: MapPin,    label: "주차장",   value: reservation.parkingLotName },
+            { icon: Car,      label: "주차 자리", value: `${reservation.parkingSpotNumber}번` },
             { icon: Calendar, label: "이용 날짜", value: s.date },
-            { icon: Clock,  label: "이용 시간", value: `${s.time} ~ ${e.time} (${getDuration()})` },
+            { icon: Clock,    label: "이용 시간", value: `${s.time} ~ ${e.time} (${getDuration()})` },
           ].map(({ icon: Icon, label, value }) => (
-            <div key={label} className="flex items-start gap-3">
+            <div key={label} className="flex items-start gap-3 pb-4 border-b border-border last:border-0 last:pb-0">
               <Icon className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-              <div><p className="text-sm text-muted-foreground">{label}</p><p className="font-medium text-foreground">{value}</p></div>
+              <div>
+                <p className="text-sm text-muted-foreground">{label}</p>
+                <p className="font-medium text-foreground">{value}</p>
+              </div>
             </div>
           ))}
         </div>
 
-        {canCancel() && (
-          <Button variant="outline" className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
-            onClick={() => setShowCancelModal(true)}>
-            예약 취소
-          </Button>
-        )}
+        <div className="bg-card border border-border rounded-xl p-6 mb-6">
+          <h2 className="font-semibold text-foreground mb-4">결제 정보</h2>
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">총 결제 금액</span>
+            <span className="font-bold text-lg text-foreground">{reservation.totalPrice.toLocaleString()}원</span>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {/* PENDING 상태 - 결제하기 버튼 */}
+          {reservation.status === "PENDING" && (
+            <button
+              onClick={handleGoToPayment}
+              className="w-full h-12 rounded-lg bg-[#2563eb] text-white text-base font-semibold hover:bg-[#1d4ed8] transition-colors flex items-center justify-center gap-2"
+            >
+              <CreditCard className="w-5 h-5" />
+              결제하기
+            </button>
+          )}
+
+          {/* 취소 버튼 */}
+          {canCancel() && (
+            <Button
+              variant="outline"
+              className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={() => setShowCancelModal(true)}
+            >
+              예약 취소
+            </Button>
+          )}
+        </div>
       </main>
 
+      {/* 취소 확인 모달 */}
       {showCancelModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-card rounded-xl p-6 max-w-sm w-full">
