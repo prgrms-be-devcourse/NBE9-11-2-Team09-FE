@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useAuth } from "@/lib/auth-context";
+import { reservationApi } from "@/lib/api";
 import { loadTossPayments } from '@tosspayments/tosspayments-sdk';
 import { useSearchParams, useRouter } from 'next/navigation';
 
@@ -10,6 +12,7 @@ export default function PaymentPage() {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
 
   const parkingLotId = Number(searchParams.get('parkingLotId'));
   const amount = Number(searchParams.get('price')) || 0;
@@ -59,6 +62,12 @@ export default function PaymentPage() {
 
     } catch (error: any) {
       if (error.code === 'USER_CANCEL') {
+        const stored = sessionStorage.getItem("pendingReservation");
+        if (stored && user?.accessToken) {
+          const { reservationId } = JSON.parse(stored);
+          await reservationApi.cancel(user.accessToken, reservationId);
+          sessionStorage.removeItem("pendingReservation");
+        }
         router.push(`/parking-lots`);
       } else {
         alert(error.message || "결제 진행 중 오류가 발생했습니다.");
