@@ -127,6 +127,7 @@ export default function ParkingLotReservePage() {
   };
 }, [parkingLotId, user, step]);
 
+
   const calculateTotalPrice = () => {
     if (!parkingLot || !startTime || !endTime) return 0;
     const mins = (endTime.getTime() - startTime.getTime()) / 60000;

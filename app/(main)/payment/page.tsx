@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useAuth } from "@/lib/auth-context";
+import { reservationApi } from "@/lib/api";
 import { loadTossPayments } from '@tosspayments/tosspayments-sdk';
 import { useSearchParams, useRouter } from 'next/navigation';
 
@@ -10,8 +12,12 @@ export default function PaymentPage() {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
 
   const parkingLotId = Number(searchParams.get('parkingLotId'));
+  const parkingSpotId = Number(searchParams.get('parkingSpotId'));
+  const startTime = decodeURIComponent(searchParams.get('startTime') || '');
+  const endTime = decodeURIComponent(searchParams.get('endTime') || '');
   const amount = Number(searchParams.get('price')) || 0;
   const paymentIdFromUrl = searchParams.get('paymentId');
 
@@ -59,6 +65,12 @@ export default function PaymentPage() {
 
     } catch (error: any) {
       if (error.code === 'USER_CANCEL') {
+        const stored = sessionStorage.getItem("pendingReservation");
+        if (stored && user?.accessToken) {
+          const { reservationId } = JSON.parse(stored);
+          await reservationApi.cancel(user.accessToken, reservationId);
+          sessionStorage.removeItem("pendingReservation");
+        }
         router.push(`/parking-lots`);
       } else {
         alert(error.message || "결제 진행 중 오류가 발생했습니다.");
@@ -83,6 +95,16 @@ export default function PaymentPage() {
           <div className="border border-gray-100 rounded-3xl p-8 bg-gray-50/50">
             <h3 className="text-lg font-bold mb-6">예약 내역 확인</h3>
             <div className="space-y-4">
+              <div className="flex justify-between border-b border-gray-100 pb-4">
+              </div>
+              <div className="flex justify-between border-b border-gray-100 pb-4">
+                <span className="text-gray-400">입차 시간</span>
+                <span className="font-medium text-gray-700">{startTime.replace('T', ' ')}</span>
+              </div>
+              <div className="flex justify-between border-b border-gray-100 pb-4">
+                <span className="text-gray-400">출차 시간</span>
+                <span className="font-medium text-gray-700">{endTime.replace('T', ' ')}</span>
+              </div>
               <div className="flex justify-between border-b border-gray-100 pb-4">
                 <span className="text-gray-400">총 결제 금액</span>
                 <span className="font-bold">{amount.toLocaleString()}원</span>

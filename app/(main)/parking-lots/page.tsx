@@ -23,6 +23,7 @@ export default function ParkingLotsPage() {
   const { user, isLoading: authLoading } = useAuth();
 
   const [parkingLots, setParkingLots] = useState<ParkingLot[]>([]);
+  const [filteredLots, setFilteredLots] = useState<ParkingLot[]>([]);
 
   // API 호출 상태
   const [loading, setLoading] = useState(true);

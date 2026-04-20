@@ -36,6 +36,13 @@ export default function ReservationDetailPage() {
 
   useEffect(() => { fetchReservation(); }, [fetchReservation]);
 
+    useEffect(() => {
+    const interval = setInterval(() => {
+      fetchReservation();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [fetchReservation]);
+
   const handleCancel = async () => {
     if (!user?.accessToken || !reservation) return;
     setCancelling(true);
