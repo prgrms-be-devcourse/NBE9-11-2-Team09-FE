@@ -1,97 +1,10 @@
 // ─────────────────────────────────────────────
-// 백엔드 API Base
+// 백엔드 API Base (Next.js rewrites로 /api → 8080 프록시)
 // ─────────────────────────────────────────────
-export const API_BASE = 'http://localhost:8080/api';
-
-// ─────────────────────────────────────────────
-// [중요] UI에서 참조하는 상수 (Labels & Options)
-// ─────────────────────────────────────────────
-
-// 차량 타입
-export type VehicleType = "SMALL" | "LARGE" | "ELECTRIC";
-export const VEHICLE_TYPE_LABELS: Record<VehicleType, string> = {
-  SMALL: "경차",
-  LARGE: "대형차",
-  ELECTRIC: "전기차",
-};
-export const VEHICLE_TYPE_OPTIONS = (
-  Object.entries(VEHICLE_TYPE_LABELS) as [VehicleType, string][]
-).map(([value, label]) => ({ value, label }));
-
-// 주차 구역 타입
-export type SpotType = "SMALL" | "LARGE" | "ELECTRIC";
-export const SPOT_TYPE_LABELS: Record<SpotType, string> = {
-  SMALL: "경차",
-  LARGE: "대형",
-  ELECTRIC: "전기차",
-};
-
-// 예약 상태 (현재 발생 중인 CONFIRMED 에러 해결)
-export type ReservationStatus = "PENDING" | "CONFIRMED" | "COMPLETED" | "CANCELED";
-export const RESERVATION_STATUS_LABELS: Record<ReservationStatus, string> = {
-  PENDING: "결제 대기",
-  CONFIRMED: "예약 확정",
-  COMPLETED: "이용 완료",
-  CANCELED: "취소됨",
-};
+const API_BASE = "/api";
 
 // ─────────────────────────────────────────────
-// 공통 타입 정의 (Interfaces)
-// ─────────────────────────────────────────────
-export interface ApiResponse<T> {
-  msg: string;
-  resultCode: string;
-  data: T;
-}
-
-export interface TokenData {
-  accessToken: string;
-  refreshToken: string;
-  tokenType: string;
-}
-
-export interface UserProfile {
-  userId: number;
-  userEmail: string;
-  userName: string;
-  plateNumber: string;
-  vehicleType: VehicleType;
-}
-
-export interface ParkingLot {
-  id: number;
-  name: string;
-  address: string;
-  totalSpot: number;
-  price: number;
-  operationStartTime: string;
-  operationEndTime: string;
-}
-
-export interface ParkingSpot {
-  id: number;
-  status: "AVAILABLE" | "OCCUPIED" | "PARKED" | "PAYING";
-  type: VehicleType;
-  number: string;
-}
-
-export interface Reservation {
-  reservationId: number;
-  parkingLotName: string;
-  parkingSpotNumber: string;
-  startTime: string;
-  endTime: string;
-  status: ReservationStatus;
-}
-
-export interface Payment {
-  paymentId: number;
-  status: "PROCESSING" | "COMPLETE" | "FAILED" | "REFUND";
-  receiptUuid: string;
-}
-
-// ─────────────────────────────────────────────
-// 공통 요청 함수 (apiRequest)
+// 공통 요청 함수 (401 시 자동 토큰 갱신 포함)
 // ─────────────────────────────────────────────
 type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
@@ -105,8 +18,9 @@ export async function apiRequest<T>(
   options: RequestOptions = {}
 ): Promise<T> {
   const { method = "GET", body, token, _retry = false } = options;
+
   const headers: HeadersInit = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token.trim()}`;
+  if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const response = await fetch(`${API_BASE}${endpoint}`, {
     method,
@@ -114,6 +28,7 @@ export async function apiRequest<T>(
     body: body ? JSON.stringify(body) : undefined,
   });
 
+  // 401 → refreshToken으로 자동 재발급 후 재시도
   if (response.status === 401 && !_retry) {
     const stored = localStorage.getItem("auth");
     if (stored) {
@@ -123,16 +38,23 @@ export async function apiRequest<T>(
           const refreshRes = await fetch(`${API_BASE}/users/refresh`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            // RefreshTokenReqDto: { refreshToken }
             body: JSON.stringify({ refreshToken: parsed.refreshToken }),
           });
           if (refreshRes.ok) {
             const refreshJson = (await refreshRes.json()) as ApiResponse<TokenData>;
             const newTokens = refreshJson.data;
             localStorage.setItem("auth", JSON.stringify(newTokens));
-            return apiRequest<T>(endpoint, { ...options, token: newTokens.accessToken, _retry: true });
+            // 원래 요청 재시도
+            return apiRequest<T>(endpoint, {
+              ...options,
+              token: newTokens.accessToken,
+              _retry: true,
+            });
           }
         }
       } catch {
+        // 갱신 실패 → 로그인 페이지로
         localStorage.removeItem("auth");
         window.location.href = "/login";
       }
@@ -140,42 +62,298 @@ export async function apiRequest<T>(
   }
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.msg || "API 요청 실패");
+    // 백엔드 RsData: { msg, resultCode, data }
+    const error = (await response.json().catch(() => ({}))) as { msg?: string };
+    throw new Error(error.msg || "API 요청에 실패했습니다.");
   }
 
   return response.json() as Promise<T>;
 }
 
 // ─────────────────────────────────────────────
-// API 객체
+// 공통 응답 타입 — 백엔드 RsData<T>
 // ─────────────────────────────────────────────
-export const authApi = {
-  signup: (data: any) => apiRequest<ApiResponse<UserProfile>>("/users/signup", { method: "POST", body: data }),
-  login: (data: any) => apiRequest<ApiResponse<TokenData>>("/users/login", { method: "POST", body: data }),
-  getProfile: (token: string) => apiRequest<ApiResponse<UserProfile>>("/users/me", { token }),
+export interface ApiResponse<T> {
+  msg: string;
+  resultCode: string;
+  data: T;
+}
+
+// ─────────────────────────────────────────────
+// VehicleType (백엔드 enum: SMALL | LARGE | ELECTRIC)
+// ─────────────────────────────────────────────
+export type VehicleType = "SMALL" | "LARGE" | "ELECTRIC";
+
+export const VEHICLE_TYPE_LABELS: Record<VehicleType, string> = {
+  SMALL: "경차",
+  LARGE: "대형차",
+  ELECTRIC: "전기차",
 };
 
-export const parkingLotApi = {
-  getList: (dong?: string) => apiRequest<ApiResponse<ParkingLot[]>>(`/parking-lots${dong ? `?dong=${encodeURIComponent(dong)}` : ""}`),
-  getDetail: (id: number) => apiRequest<ApiResponse<ParkingLot>>(`/parking-lots/${id}`),
-  getAvailableSpots: (lotId: number) => apiRequest<ApiResponse<ParkingSpot[]>>(`/parking-spots/${lotId}/spots/available`),
+export const VEHICLE_TYPE_OPTIONS = (
+  Object.entries(VEHICLE_TYPE_LABELS) as [VehicleType, string][]
+).map(([value, label]) => ({ value, label }));
+
+// ─────────────────────────────────────────────
+// Auth 타입 (백엔드 DTO 기준)
+// ─────────────────────────────────────────────
+
+// LoginResDto: { accessToken, refreshToken, tokenType }
+export interface TokenData {
+  accessToken: string;
+  refreshToken: string;
+  tokenType: string;
+}
+// 하위 호환 alias
+export type LoginResponse = TokenData;
+
+// SignupReqDto: { userEmail, password, name, plateNumber, vehicleType }
+export interface SignupRequest {
+  userEmail: string;     // ← 백엔드 필드명
+  password: string;
+  name: string;
+  plateNumber: string;   // ← 백엔드 필드명 (vehicleNumber 아님)
+  vehicleType: VehicleType;
+}
+
+// LoginReqDto: { userEmail, password }
+export interface LoginRequest {
+  userEmail: string;     // ← 백엔드 필드명 (email 아님)
+  password: string;
+}
+
+// UserProfileResDto: { userId, userEmail, userName, plateNumber, vehicleType }
+export interface UserProfile {
+  userId: number;
+  userEmail: string;
+  userName: string;
+  plateNumber: string;
+  vehicleType: VehicleType;
+}
+
+// VehicleUpdateReqDto: { plateNumber, vehicleType }
+export interface VehicleUpdateRequest {
+  plateNumber: string;
+  vehicleType: VehicleType;
+}
+
+// WithdrawReqDto: { password }
+export interface WithdrawRequest {
+  password: string;
+}
+
+// ─────────────────────────────────────────────
+// 주차장 타입 (백엔드 ParkingLotResDto 기준)
+// ─────────────────────────────────────────────
+export interface ParkingLot {
+  id: number;
+  name: string;
+  address: string;
+  totalSpot: number;          // 백엔드 필드명
+  price: number;              // 10분당 원
+  operationStartTime: string; // "HH:mm:ss"
+  operationEndTime: string;   // "HH:mm:ss"
+}
+
+// ParkingSpotDto: { id, status, type, number }
+export interface ParkingSpot {
+  id: number;
+  status: SpotStatus;
+  type: SpotType;
+  number: string;
+}
+
+export type SpotStatus = "AVAILABLE" | "OCCUPIED" | "PARKED" | "PAYING";
+export type SpotType = "SMALL" | "LARGE" | "ELECTRIC";
+
+export const SPOT_TYPE_LABELS: Record<SpotType, string> = {
+  SMALL: "경차",
+  LARGE: "대형",
+  ELECTRIC: "전기차",
 };
 
-export const reservationApi = {
-  create: (token: string, data: any) => apiRequest<ApiResponse<Reservation>>("/reservations", { method: "POST", token, body: data }),
-  getList: (token: string) => apiRequest<ApiResponse<Reservation[]>>("/reservations", { token }),
-  cancel: (token: string, id: number) => apiRequest<ApiResponse<null>>(`/reservations/${id}/cancel`, { method: "PATCH", token }),
+// ─────────────────────────────────────────────
+// 예약 타입 (백엔드 ReservationResDto 기준)
+// ─────────────────────────────────────────────
+export interface Reservation {
+  reservationId: number;
+  parkingLotName: string;
+  parkingSpotNumber: string;
+  startTime: string;
+  endTime: string;
+  status: ReservationStatus;
+}
+
+export type ReservationStatus =
+  | "PENDING"    // 결제 전
+  | "CONFIRMED"  // 예약 확정
+  | "COMPLETED"  // 주차 완료
+  | "CANCELED";  // 취소
+
+export const RESERVATION_STATUS_LABELS: Record<ReservationStatus, string> = {
+  PENDING: "결제 대기",
+  CONFIRMED: "예약 확정",
+  COMPLETED: "이용 완료",
+  CANCELED: "취소됨",
 };
 
-export const paymentApi = {
-  start: (token: string, data: { reservationId: number; amount: number }) =>
-    apiRequest<ApiResponse<Payment>>("/payments", { method: "POST", token, body: data }),
-  approve: (token: string, paymentId: number, tossData: any) =>
-    apiRequest<ApiResponse<any>>(`/payments/${paymentId}/approve`, { method: "POST", token, body: tossData }),
-};
+// ReservationReqDto: { parkingLotId, parkingSpotId, startTime, endTime }
+// 주의: 시간 포맷 → "yyyy-MM-dd HH:mm:ss"
+export interface CreateReservationRequest {
+  parkingLotId: number;
+  parkingSpotId: number;
+  startTime: string;
+  endTime: string;
+}
 
+// datetime-local 값("yyyy-MM-ddTHH:mm") → 백엔드 포맷("yyyy-MM-dd HH:mm:ss")
 export function toBackendDateTime(datetimeLocal: string): string {
-  if (!datetimeLocal) return "";
   return datetimeLocal.replace("T", " ") + ":00";
 }
+
+// ─────────────────────────────────────────────
+// 결제 타입 (백엔드 PaymentRespDto 기준)
+// ─────────────────────────────────────────────
+export interface Payment {
+  paymentId: number;
+  status: PaymentStatus;
+  receiptUuid: string;
+}
+
+export type PaymentStatus = "PROCESSING" | "COMPLETE" | "FAILED" | "REFUND";
+
+export interface CreatePaymentRequest {
+  reservationId: number;
+  amount: number;
+}
+
+// ─────────────────────────────────────────────
+// Auth API
+// ─────────────────────────────────────────────
+export const authApi = {
+  // POST /api/users/signup → RsData<UserProfileResDto>
+  signup: (data: SignupRequest) =>
+    apiRequest<ApiResponse<UserProfile>>("/users/signup", {
+      method: "POST",
+      body: data,
+    }),
+
+  // POST /api/users/login → RsData<LoginResDto>
+  login: (data: LoginRequest) =>
+    apiRequest<ApiResponse<TokenData>>("/users/login", {
+      method: "POST",
+      body: data,
+    }),
+
+  // POST /api/users/refresh → RsData<LoginResDto>
+  refresh: (refreshToken: string) =>
+    apiRequest<ApiResponse<TokenData>>("/users/refresh", {
+      method: "POST",
+      body: { refreshToken },
+    }),
+
+  // POST /api/users/logout
+  logout: (token: string) =>
+    apiRequest<ApiResponse<null>>("/users/logout", {
+      method: "POST",
+      token,
+    }),
+
+  // GET /api/users/me → RsData<UserProfileResDto>
+  getProfile: (token: string) =>
+    apiRequest<ApiResponse<UserProfile>>("/users/me", { token }),
+
+  // PATCH /api/users/me/vehicle → RsData<UserProfileResDto>
+  updateVehicle: (token: string, data: VehicleUpdateRequest) =>
+    apiRequest<ApiResponse<UserProfile>>("/users/me/vehicle", {
+      method: "PATCH",
+      token,
+      body: data,
+    }),
+
+  // DELETE /api/users/me
+  withdraw: (token: string, data: WithdrawRequest) =>
+    apiRequest<ApiResponse<null>>("/users/me", {
+      method: "DELETE",
+      token,
+      body: data,
+    }),
+};
+
+// ─────────────────────────────────────────────
+// Parking Lot API
+// ─────────────────────────────────────────────
+export const parkingLotApi = {
+  // GET /api/parking-lots?dong={dong}
+  getList: (dong?: string) =>
+    apiRequest<ApiResponse<ParkingLot[]>>(
+      `/parking-lots${dong ? `?dong=${encodeURIComponent(dong)}` : ""}`
+    ),
+
+  // GET /api/parking-lots/{id}
+  getDetail: (id: number) =>
+    apiRequest<ApiResponse<ParkingLot>>(`/parking-lots/${id}`),
+
+  // GET /api/parking-spots/{lotId}/spots/available
+  getAvailableSpots: (parkingLotId: number) =>
+    apiRequest<ApiResponse<ParkingSpot[]>>(
+      `/parking-spots/${parkingLotId}/spots/available`
+    ),
+
+  // GET /api/parking-spots/{lotId}/spots
+  getAllSpots: (parkingLotId: number) =>
+    apiRequest<ApiResponse<ParkingSpot[]>>(
+      `/parking-spots/${parkingLotId}/spots`
+    ),
+};
+
+// ─────────────────────────────────────────────
+// Reservation API
+// ─────────────────────────────────────────────
+export const reservationApi = {
+  // GET /api/reservations?status={status}
+  getList: (token: string, status?: ReservationStatus) =>
+    apiRequest<ApiResponse<Reservation[]>>(
+      `/reservations${status ? `?status=${status}` : ""}`,
+      { token }
+    ),
+
+  // GET /api/reservations/{id}
+  getDetail: (token: string, id: number) =>
+    apiRequest<ApiResponse<Reservation>>(`/reservations/${id}`, { token }),
+
+  // POST /api/reservations
+  create: (token: string, data: CreateReservationRequest) =>
+    apiRequest<ApiResponse<Reservation>>("/reservations", {
+      method: "POST",
+      token,
+      body: data,
+    }),
+
+  // PATCH /api/reservations/{id}/cancel
+  cancel: (token: string, id: number) =>
+    apiRequest<ApiResponse<null>>(`/reservations/${id}/cancel`, {
+      method: "PATCH",
+      token,
+    }),
+};
+
+// ─────────────────────────────────────────────
+// Payment API
+// ─────────────────────────────────────────────
+export const paymentApi = {
+  // POST /api/payments → { reservationId, amount }
+  start: (token: string, data: CreatePaymentRequest) =>
+    apiRequest<ApiResponse<Payment>>("/payments", {
+      method: "POST",
+      token,
+      body: data,
+    }),
+
+  // POST /api/payments/{paymentId}/approve
+  approve: (token: string, paymentId: number) =>
+    apiRequest<ApiResponse<Payment>>(`/payments/${paymentId}/approve`, {
+      method: "POST",
+      token,
+    }),
+};

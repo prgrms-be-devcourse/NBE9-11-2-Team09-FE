@@ -18,6 +18,9 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "swr": "^2.2.5",
+    "lucide-react": "^0.453.0",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.1",
     "tailwind-merge": "^2.5.4"
   },
   "devDependencies": {

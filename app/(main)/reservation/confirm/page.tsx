@@ -17,7 +17,7 @@ interface PendingReservation {
   parkingLotName: string;
   spotId: number;
   spotNumber: string;
-  startTime: string;
+  startTime: string;  // "yyyy-MM-dd HH:mm:ss"
   endTime: string;
   totalPrice: number;
 }
@@ -61,27 +61,36 @@ export default function ReservationConfirmPage() {
     setError(null);
 
     try {
-      // 1. 예약 생성
+      // 1. POST /api/reservations
+      // ReservationReqDto: { parkingLotId, parkingSpotId, startTime, endTime }
       const resRes = await reservationApi.create(user.accessToken, {
         parkingLotId: reservation.parkingLotId,
         parkingSpotId: reservation.spotId,
-        startTime: reservation.startTime,
+        startTime: reservation.startTime,  // 이미 "yyyy-MM-dd HH:mm:ss" 형식
         endTime: reservation.endTime,
       });
+
+      // reservationId 사용
       const reservationId = resRes.data.reservationId;
 
-      // 2. 결제 시작
+      // 2. POST /api/payments { reservationId, amount }
       const payRes = await paymentApi.start(user.accessToken, {
         reservationId,
         amount: reservation.totalPrice,
       });
+
+      // paymentId 사용
       const paymentId = payRes.data.paymentId;
 
+      // 3. POST /api/payments/{paymentId}/approve
+      await paymentApi.approve(user.accessToken, paymentId);
       // 3. 토스 결제 페이지로 이동
       router.push(
         `/payment?parkingLotId=${reservation.parkingLotId}&parkingSpotId=${reservation.spotId}&startTime=${encodeURIComponent(reservation.startTime)}&endTime=${encodeURIComponent(reservation.endTime)}&price=${reservation.totalPrice}&paymentId=${paymentId}`
       );
 
+      sessionStorage.removeItem("pendingReservation");
+      setStep("success");
     } catch (err) {
       setError(err instanceof Error ? err.message : "예약에 실패했습니다.");
     } finally {
@@ -154,6 +163,7 @@ export default function ReservationConfirmPage() {
         </button>
         <h1 className="text-2xl font-bold text-foreground mb-6">예약 확인</h1>
 
+        {/* 예약 정보 */}
         <div className="bg-card border border-border rounded-xl p-6 mb-6 space-y-4">
           <h2 className="font-semibold text-foreground">예약 정보</h2>
           {[
@@ -168,15 +178,18 @@ export default function ReservationConfirmPage() {
           ))}
         </div>
 
+        {/* 예약자 정보 - profile 사용 */}
         <div className="bg-card border border-border rounded-xl p-6 mb-6">
           <h2 className="font-semibold text-foreground mb-4">예약자 정보</h2>
           <div className="space-y-3 text-sm">
             <div className="flex justify-between"><span className="text-muted-foreground">이름</span><span className="text-foreground">{profile?.userName ?? "-"}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">이메일</span><span className="text-foreground">{profile?.userEmail ?? "-"}</span></div>
+            {/* plateNumber 사용 */}
             <div className="flex justify-between"><span className="text-muted-foreground">차량번호</span><span className="text-foreground">{profile?.plateNumber ?? "-"}</span></div>
           </div>
         </div>
 
+        {/* 결제 정보 */}
         <div className="bg-card border border-border rounded-xl p-6 mb-6">
           <h2 className="font-semibold text-foreground mb-4">결제 정보</h2>
           <div className="space-y-3 text-sm">
