@@ -359,3 +359,11 @@ export const adminPaymentApi = {
   refund: (token: string, paymentId: number) =>
     apiRequest<ApiResponse<null>>(`/admin/payments/${paymentId}/refund`, { method: "PATCH", token }),
 };
+
+export const adminParkingSpotApi = {
+  updateStatus: (token: string, spotId: number, status: SpotStatus) =>
+    apiRequest<ApiResponse<null>>(
+      `/admin/parking-spots/${spotId}/status?status=${status}`,
+      { method: "PATCH", token }
+    ),
+};
