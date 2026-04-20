@@ -129,8 +129,9 @@ export default function ReservationConfirmPage() {
         amount: reservation.totalPrice,
       });
 
+      // 3. 토스 결제 페이지로 이동
       router.push(
-        `/payment?parkingLotId=${reservation.parkingLotId}&price=${reservation.totalPrice}&paymentId=${payRes.data.paymentId}`
+          `/payment?parkingLotId=${reservation.parkingLotId}&parkingSpotId=${reservation.spotId}&startTime=${encodeURIComponent(reservation.startTime)}&endTime=${encodeURIComponent(reservation.endTime)}&price=${reservation.totalPrice}&paymentId=${payRes.data.paymentId}`
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "결제 시작에 실패했습니다.");
