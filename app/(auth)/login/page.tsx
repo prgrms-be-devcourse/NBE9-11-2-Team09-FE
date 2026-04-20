@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { authApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Car } from "lucide-react";
@@ -17,22 +18,29 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setIsLoading(true);
+  e.preventDefault();
+  setError("");
+  setIsLoading(true);
 
-    try {
-      // auth-context의 login()이 내부적으로
-      // userEmail 필드명 변환 + 토큰 저장 + 프로필 로드 처리
-      await login(email, password);
-      router.push("/parking-lots");
-    } catch (err) {
-      // apiRequest에서 error.msg를 throw하므로 그대로 표시
-      setError(err instanceof Error ? err.message : "로그인에 실패했습니다.");
-    } finally {
-      setIsLoading(false);
+  try {
+    await login(email, password);
+    // login() 내부에서 profile도 로드하므로 profile을 가져와서 role 확인
+    const stored = localStorage.getItem("auth");
+    if (stored) {
+      const { accessToken } = JSON.parse(stored);
+      const res = await authApi.getProfile(accessToken);
+      if (res.data.role === "ADMIN") {
+        router.push("/admin");
+      } else {
+        router.push("/parking-lots");
+      }
     }
-  };
+  } catch (err) {
+    setError(err instanceof Error ? err.message : "로그인에 실패했습니다.");
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   return (
     <div className="min-h-screen flex">
