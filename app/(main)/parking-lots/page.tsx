@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { Header } from "@/components/layout/header";
-import { ParkingLot, parkingLotApi } from "@/lib/api";
 import { ParkingLotCard } from "@/components/parking/parking-lot-card";
 import { SearchFilters, type FilterOptions } from "@/components/parking/search-filters";
+import { parkingLotApi, type ParkingLot } from "@/lib/api";
 import {
   ChevronLeft,
   ChevronRight,
@@ -30,18 +30,12 @@ export default function ParkingLotsPage() {
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [filters, setFilters] = useState<FilterOptions>({ sortBy: "name", hasAvailable: false });
-  const [filteredLots, setFilteredLots] = useState<ParkingLot[]>([]);
 
   // ─── 목록 조회 ───────────────────────────────────────────
   const fetchParkingLots = async (dong?: string) => {
-    if (!user?.accessToken) {
-      setLoading(false);
-      return;
-    }
-  
+    if (!user?.accessToken) return;
     setLoading(true);
     setError(null);
-  
     try {
       const response = await parkingLotApi.getList(user.accessToken, dong);
       const lots = response.data;
@@ -57,14 +51,7 @@ export default function ParkingLotsPage() {
   };
 
   useEffect(() => {
-    if (authLoading) return;
-  
-    if (!user?.accessToken) {
-      setLoading(false);
-      return;
-    }
-  
-    fetchParkingLots();
+    if (!authLoading && user?.accessToken) fetchParkingLots();
   }, [authLoading, user]);
 
   // ─── 정렬 적용 ───────────────────────────────────────────
@@ -96,7 +83,7 @@ export default function ParkingLotsPage() {
   // ─── 필터 변경 ───────────────────────────────────────────
   const handleFilterChange = (newFilters: FilterOptions) => {
     setFilters(newFilters);
-    applySort(parkingLots, newFilters);
+    applySort(filteredLots, newFilters);
   };
 
   // ─── 페이지네이션 ────────────────────────────────────────
