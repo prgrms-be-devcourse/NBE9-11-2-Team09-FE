@@ -9,7 +9,7 @@ import {
   type ParkingSpot,
   type SpotStatus,
 } from "@/lib/api";
-import { Loader2, ChevronDown, CheckCircle2 } from "lucide-react";
+import { Loader2, ChevronDown, CheckCircle2, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const STATUS_LABELS: Record<SpotStatus, string> = {
@@ -37,6 +37,10 @@ export default function AdminParkingSpotsPage() {
   const [loadingLots, setLoadingLots] = useState(true);
   const [loadingSpots, setLoadingSpots] = useState(false);
 
+  // 페이지네이션
+  const SPOTS_PER_PAGE = 10;
+  const [currentPage, setCurrentPage] = useState(1);
+
   // 상태 변경 중인 자리 id → 선택된 status 값
   const [pendingStatus, setPendingStatus] = useState<Record<number, SpotStatus>>({});
   // 저장 요청 중인 자리 id
@@ -60,6 +64,7 @@ export default function AdminParkingSpotsPage() {
     if (!user?.accessToken) return;
     setSelectedLot(lot);
     setPendingStatus({});
+    setCurrentPage(1);
     setLoadingSpots(true);
     try {
       const res = await parkingLotApi.getAllSpots(user.accessToken, lot.id);
@@ -80,7 +85,6 @@ export default function AdminParkingSpotsPage() {
     setSavingId(spot.id);
     try {
       await adminParkingSpotApi.updateStatus(user.accessToken, spot.id, newStatus);
-      // 로컬 상태 업데이트
       setSpots((prev) =>
         prev.map((s) => (s.id === spot.id ? { ...s, status: newStatus } : s))
       );
@@ -97,6 +101,8 @@ export default function AdminParkingSpotsPage() {
       setSavingId(null);
     }
   };
+
+  const totalPages = Math.ceil(spots.length / SPOTS_PER_PAGE);
 
   return (
     <div>
@@ -184,90 +190,115 @@ export default function AdminParkingSpotsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {spots.map((spot) => {
-                    const selected = pendingStatus[spot.id] ?? spot.status;
-                    const isDirty = pendingStatus[spot.id] && pendingStatus[spot.id] !== spot.status;
-                    const isSaving = savingId === spot.id;
-                    const isSuccess = successId === spot.id;
+                  {spots
+                    .slice((currentPage - 1) * SPOTS_PER_PAGE, currentPage * SPOTS_PER_PAGE)
+                    .map((spot) => {
+                      const selected = pendingStatus[spot.id] ?? spot.status;
+                      const isDirty = pendingStatus[spot.id] && pendingStatus[spot.id] !== spot.status;
+                      const isSaving = savingId === spot.id;
+                      const isSuccess = successId === spot.id;
 
-                    return (
-                      <tr key={spot.id} className="hover:bg-slate-50">
-                        <td className="px-5 py-3 font-medium text-slate-800">
-                          {spot.number}번
-                        </td>
-                        <td className="px-5 py-3 text-slate-500">
-                          {spot.type === "SMALL"
-                            ? "경차"
-                            : spot.type === "LARGE"
-                            ? "대형"
-                            : "전기차"}
-                        </td>
-                        <td className="px-5 py-3">
-                          <span
-                            className={cn(
-                              "px-2 py-1 rounded-full text-xs font-medium",
-                              STATUS_STYLE[spot.status]
-                            )}
-                          >
-                            {STATUS_LABELS[spot.status]}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3">
-                          <div className="relative inline-block">
-                            <select
-                              value={selected}
-                              onChange={(e) =>
-                                setPendingStatus((prev) => ({
-                                  ...prev,
-                                  [spot.id]: e.target.value as SpotStatus,
-                                }))
-                              }
+                      return (
+                        <tr key={spot.id} className="hover:bg-slate-50">
+                          <td className="px-5 py-3 font-medium text-slate-800">
+                            {spot.number}번
+                          </td>
+                          <td className="px-5 py-3 text-slate-500">
+                            {spot.type === "SMALL"
+                              ? "경차"
+                              : spot.type === "LARGE"
+                              ? "대형"
+                              : "전기차"}
+                          </td>
+                          <td className="px-5 py-3">
+                            <span
                               className={cn(
-                                "appearance-none pr-8 pl-3 py-1.5 rounded-lg border text-xs font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#2563eb]",
-                                isDirty
-                                  ? "border-[#2563eb] bg-blue-50 text-[#2563eb]"
-                                  : "border-slate-200 bg-white text-slate-700"
+                                "px-2 py-1 rounded-full text-xs font-medium",
+                                STATUS_STYLE[spot.status]
                               )}
                             >
-                              {ALL_STATUSES.map((s) => (
-                                <option key={s} value={s}>
-                                  {STATUS_LABELS[s]}
-                                </option>
-                              ))}
-                            </select>
-                            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                          </div>
-                        </td>
-                        <td className="px-5 py-3">
-                          {isSuccess ? (
-                            <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
-                              <CheckCircle2 className="w-4 h-4" />
-                              변경 완료
+                              {STATUS_LABELS[spot.status]}
                             </span>
-                          ) : (
-                            <button
-                              onClick={() => handleSave(spot)}
-                              disabled={!isDirty || isSaving}
-                              className={cn(
-                                "px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1",
-                                isDirty
-                                  ? "bg-[#2563eb] text-white hover:bg-blue-700"
-                                  : "bg-slate-100 text-slate-400 cursor-not-allowed"
-                              )}
-                            >
-                              {isSaving ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                "적용"
-                              )}
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                          </td>
+                          <td className="px-5 py-3">
+                            <div className="relative inline-block">
+                              <select
+                                value={selected}
+                                onChange={(e) =>
+                                  setPendingStatus((prev) => ({
+                                    ...prev,
+                                    [spot.id]: e.target.value as SpotStatus,
+                                  }))
+                                }
+                                className={cn(
+                                  "appearance-none pr-8 pl-3 py-1.5 rounded-lg border text-xs font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#2563eb]",
+                                  isDirty
+                                    ? "border-[#2563eb] bg-blue-50 text-[#2563eb]"
+                                    : "border-slate-200 bg-white text-slate-700"
+                                )}
+                              >
+                                {ALL_STATUSES.map((s) => (
+                                  <option key={s} value={s}>
+                                    {STATUS_LABELS[s]}
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                            </div>
+                          </td>
+                          <td className="px-5 py-3">
+                            {isSuccess ? (
+                              <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
+                                <CheckCircle2 className="w-4 h-4" />
+                                변경 완료
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => handleSave(spot)}
+                                disabled={!isDirty || isSaving}
+                                className={cn(
+                                  "px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1",
+                                  isDirty
+                                    ? "bg-[#2563eb] text-white hover:bg-blue-700"
+                                    : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                                )}
+                              >
+                                {isSaving ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  "적용"
+                                )}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
+
+              {/* 페이지네이션 */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-3 px-5 py-4 border-t border-slate-100">
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="h-8 w-8 flex items-center justify-center rounded-lg bg-slate-100 text-slate-500 disabled:opacity-40 hover:bg-slate-200 transition-colors"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-sm font-medium text-slate-700 min-w-[48px] text-center">
+                    {currentPage} / {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="h-8 w-8 flex items-center justify-center rounded-lg bg-slate-100 text-slate-500 disabled:opacity-40 hover:bg-slate-200 transition-colors"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

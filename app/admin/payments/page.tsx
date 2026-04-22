@@ -10,6 +10,8 @@ export default function AdminPaymentsPage() {
   const { user } = useAuth();
   const [payments, setPayments] = useState<AdminPayment[]>([]);
   const [loading, setLoading] = useState(true);
+  const PAYMENTS_PER_PAGE = 10;
+  const [currentPage, setCurrentPage] = useState(1);
 
   const fetchPayments = async () => {
     if (!user?.accessToken) return;
@@ -58,7 +60,7 @@ export default function AdminPaymentsPage() {
               <tr><td colSpan={6} className="py-20 text-center"><Loader2 className="w-6 h-6 animate-spin text-[#2563eb] mx-auto" /></td></tr>
             ) : payments.length === 0 ? (
               <tr><td colSpan={6} className="py-20 text-center text-slate-400">결제 내역이 없습니다.</td></tr>
-            ) : payments.map((p) => (
+            ) : payments.slice((currentPage - 1) * PAYMENTS_PER_PAGE, currentPage * PAYMENTS_PER_PAGE).map((p) => (
               <tr key={p.paymentId} className="hover:bg-slate-50">
                 <td className="px-4 py-3 text-slate-500">{p.paymentId}</td>
                 <td className="px-4 py-3 font-medium text-slate-900">{p.userName}</td>
@@ -76,6 +78,29 @@ export default function AdminPaymentsPage() {
             ))}
           </tbody>
         </table>
+
+        {/* 페이지네이션 */}
+        {payments.length > PAYMENTS_PER_PAGE && (
+          <div className="flex items-center justify-center gap-3 px-5 py-4 border-t border-slate-100">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="h-9 w-9 flex items-center justify-center rounded-xl bg-slate-100 text-slate-500 disabled:opacity-40 hover:bg-slate-200 transition-colors"
+            >
+              ‹
+            </button>
+            <span className="text-sm font-semibold text-slate-700 min-w-[48px] text-center">
+              {currentPage} / {Math.ceil(payments.length / PAYMENTS_PER_PAGE)}
+            </span>
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(Math.ceil(payments.length / PAYMENTS_PER_PAGE), p + 1))}
+              disabled={currentPage === Math.ceil(payments.length / PAYMENTS_PER_PAGE)}
+              className="h-9 w-9 flex items-center justify-center rounded-xl bg-slate-100 text-slate-500 disabled:opacity-40 hover:bg-slate-200 transition-colors"
+            >
+              ›
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

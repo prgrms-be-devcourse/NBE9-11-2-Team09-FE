@@ -19,30 +19,6 @@ export interface FilterOptions {
 const SEOUL_DONGS = [
   "전체",
   "강남구",
-  "강동구",
-  "강북구",
-  "강서구",
-  "관악구",
-  "광진구",
-  "구로구",
-  "금천구",
-  "노원구",
-  "도봉구",
-  "동대문구",
-  "동작구",
-  "마포구",
-  "서대문구",
-  "서초구",
-  "성동구",
-  "성북구",
-  "송파구",
-  "양천구",
-  "영등포구",
-  "용산구",
-  "은평구",
-  "종로구",
-  "중구",
-  "중랑구",
 ];
 
 export function SearchFilters({ onSearch, onFilterChange }: SearchFiltersProps) {
@@ -121,7 +97,7 @@ export function SearchFilters({ onSearch, onFilterChange }: SearchFiltersProps) 
 
       {/* District Filter */}
       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-        {SEOUL_DONGS.slice(0, 10).map((dong) => (
+        {SEOUL_DONGS.map((dong) => (
           <button
             key={dong}
             onClick={() => handleDongSelect(dong)}
@@ -135,12 +111,6 @@ export function SearchFilters({ onSearch, onFilterChange }: SearchFiltersProps) 
             {dong}
           </button>
         ))}
-        <button
-          onClick={() => setShowFilters(!showFilters)}
-          className="px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap bg-muted text-muted-foreground hover:bg-muted/80"
-        >
-          더보기...
-        </button>
       </div>
 
       {/* Expanded Filters */}
