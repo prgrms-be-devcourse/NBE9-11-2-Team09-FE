@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
-import { paymentApi } from "@/lib/api";
+import { paymentApi, reservationApi } from "@/lib/api";
 import {
   ArrowLeft, MapPin, Calendar, Clock,
   CreditCard, Loader2, AlertCircle, Shield,
@@ -50,6 +50,8 @@ export default function ReservationConfirmPage() {
       router.push("/parking-lots");
     }, 300000);
 
+    
+
     const countdown = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
@@ -66,11 +68,36 @@ export default function ReservationConfirmPage() {
     };
   }, [reservation, router]);
 
+  useEffect(() => {
+  const onPopState = () => {
+    const stored = sessionStorage.getItem("pendingReservation")
+    if (stored && user?.accessToken) {
+      const { reservationId } = JSON.parse(stored)
+      fetch(`/api/reservations/${reservationId}/cancel`, {
+        method: 'PATCH',
+        keepalive: true,
+        headers: { Authorization: `Bearer ${user.accessToken}` }
+      })
+      sessionStorage.removeItem("pendingReservation")
+    }
+  }
+  window.addEventListener('popstate', onPopState)
+  return () => window.removeEventListener('popstate', onPopState)
+  }, [user?.accessToken])
+
   const formatTimeLeft = () => {
     const m = Math.floor(timeLeft / 60);
     const s = timeLeft % 60;
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
+
+  const handleBack = async () => {
+  if (reservation && user?.accessToken) {
+    await reservationApi.cancel(user.accessToken, reservation.reservationId)
+    sessionStorage.removeItem("pendingReservation")
+  }
+    router.back()
+  }
 
   const isUrgent = timeLeft <= 60;
 
@@ -102,8 +129,9 @@ export default function ReservationConfirmPage() {
         amount: reservation.totalPrice,
       });
 
+      // 3. 토스 결제 페이지로 이동
       router.push(
-        `/payment?parkingLotId=${reservation.parkingLotId}&price=${reservation.totalPrice}&paymentId=${payRes.data.paymentId}`
+          `/payment?parkingLotId=${reservation.parkingLotId}&parkingSpotId=${reservation.spotId}&startTime=${encodeURIComponent(reservation.startTime)}&endTime=${encodeURIComponent(reservation.endTime)}&price=${reservation.totalPrice}&paymentId=${payRes.data.paymentId}`
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "결제 시작에 실패했습니다.");
@@ -127,7 +155,7 @@ export default function ReservationConfirmPage() {
     <div className="min-h-screen bg-background">
       <Header />
       <main className="max-w-lg mx-auto px-4 py-6">
-        <button onClick={() => router.back()} className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6">
+        <button onClick={handleBack} className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6">
           <ArrowLeft className="w-4 h-4" /><span>뒤로가기</span>
         </button>
         <h1 className="text-2xl font-bold text-foreground mb-4">예약 확인</h1>

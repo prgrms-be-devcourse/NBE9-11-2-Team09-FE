@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { LayoutDashboard, Users, CalendarDays, CreditCard, LogOut } from "lucide-react";
+import { LayoutDashboard, Users, CalendarDays, CreditCard, LogOut, ParkingCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -13,6 +13,7 @@ const navItems = [
   { href: "/admin/users", label: "회원 관리", icon: Users },
   { href: "/admin/reservations", label: "예약 관리", icon: CalendarDays },
   { href: "/admin/payments", label: "결제 관리", icon: CreditCard },
+  { href: "/admin/parking-spots", label: "자리 상태 관리", icon: ParkingCircle },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
