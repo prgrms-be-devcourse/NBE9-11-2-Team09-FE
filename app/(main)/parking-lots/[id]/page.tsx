@@ -56,9 +56,6 @@ export default function ParkingLotDetailPage() {
     }
   }, [parkingLotId, user]);
 
-  // ----------------------------
-  // 8. 화면 최초 진입 / id 변경 시 상세 조회 실행
-  // ----------------------------
   useEffect(() => {
     if (!authLoading && user?.accessToken) fetchParkingLot();
   }, [fetchParkingLot, authLoading, user]);
