@@ -41,6 +41,7 @@ export default function ParkingLotDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [availableCount, setAvailableCount] = useState<number | null>(null);
 
+
   const fetchParkingLot = useCallback(async () => {
     if (!user?.accessToken) return;
     setLoading(true);
