@@ -39,6 +39,8 @@ export default function ParkingLotDetailPage() {
   const [parkingLot, setParkingLot] = useState<ParkingLot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [availableCount, setAvailableCount] = useState<number | null>(null);
+
 
   const fetchParkingLot = useCallback(async () => {
     if (!user?.accessToken) return;
@@ -47,6 +49,9 @@ export default function ParkingLotDetailPage() {
     try {
       const res = await parkingLotApi.getDetail(user.accessToken, parkingLotId);
       setParkingLot(res.data);
+      // 이용가능 자리 수 조회
+      const spotsRes = await parkingLotApi.getAvailableSpots(user.accessToken, parkingLotId);
+      setAvailableCount(spotsRes.data.length);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "주차장 상세 정보를 불러오지 못했습니다."
@@ -149,6 +154,11 @@ export default function ParkingLotDetailPage() {
               <span className="rounded-full bg-[#eef4ff] px-4 py-1.5 text-[16px] font-bold text-[#2563eb]">
                 공영주차장
               </span>
+              {availableCount !== null && (
+                <span className="text-[14px] font-semibold text-slate-500">
+                  🟢 이용가능한 자리 : {availableCount}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2 text-[18px] text-slate-600 md:text-[20px]">
               <MapPin className="h-5 w-5 shrink-0 text-[#2563eb]" />
