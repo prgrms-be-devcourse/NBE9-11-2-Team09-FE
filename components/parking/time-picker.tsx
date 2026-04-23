@@ -22,7 +22,7 @@ export function TimePicker({
   const [startMinute, setStartMinute] = useState<number>(0);
   const [duration, setDuration] = useState<number>(1);
 
-  const DURATION_OPTIONS = [0.5, 1, 2, 3, 4, 6, 8, 12, 24];
+  const DURATION_OPTIONS = [0.5, 1, 2, 3, 4, 6, 8, 12];
   const dates = Array.from({ length: 7 }, (_, i) => {
     const date = new Date();
     date.setDate(date.getDate() + i);
@@ -33,7 +33,7 @@ export function TimePicker({
   const isToday = selectedDate.toDateString() === now.toDateString();
 
   // 현재 시간 이후의 시간(Hour)만 필터링
-  const hours = Array.from({ length: 24 }, (_, i) => i).filter((h) => {
+  const hours = Array.from({ length: 22 }, (_, i) => i).filter((h) => {
     if (!isToday) return true;
     return h >= now.getHours();
   });
